@@ -108,7 +108,7 @@ def parse_remarks_mitra_hit(remarks_text):
         [url]
 
         Header:
-        [headers]
+        [headers - bisa multi-line key: value pairs]
 
         RequestBody:
         [json body]
@@ -116,7 +116,11 @@ def parse_remarks_mitra_hit(remarks_text):
         Response:
         [json response]
 
-    Kadang URL langsung dimulai dengan https://... tanpa label "URL:"
+    Variasi yang didukung:
+        - "URL:" atau "URL :" atau langsung https://...
+        - "Header:" atau "Headers:" atau "Header :" atau "Headers :"
+        - "RequestBody:" atau "Request Body:" atau "Request body:" atau "RequestBody :"
+        - "Response:" atau "Response :"
 
     Returns:
         dict with keys: url, headers, request_body, response
@@ -136,11 +140,11 @@ def parse_remarks_mitra_hit(remarks_text):
     # Normalisasi line endings
     text = text.replace('\r\n', '\n').replace('\r', '\n')
 
-    # Pattern: mencari section berdasarkan label
-    url_pattern = r'(?i)(?:^|\n)\s*(?:URL)\s*:\s*\n?'
-    header_pattern = r'(?i)(?:^|\n)\s*(?:Headers?)\s*:\s*\n?'
+    # Pattern: mencari section berdasarkan label (mendukung spasi sebelum colon)
+    url_pattern = r'(?i)(?:^|\n)\s*URL\s*:\s*\n?'
+    header_pattern = r'(?i)(?:^|\n)\s*Headers?\s*:\s*\n?'
     request_body_pattern = r'(?i)(?:^|\n)\s*(?:Request\s*Body|RequestBody)\s*:\s*\n?'
-    response_pattern = r'(?i)(?:^|\n)\s*(?:Response)\s*:\s*\n?'
+    response_pattern = r'(?i)(?:^|\n)\s*Response\s*:\s*\n?'
 
     # Cari posisi masing-masing section
     url_match = re.search(url_pattern, text)
@@ -151,19 +155,19 @@ def parse_remarks_mitra_hit(remarks_text):
     # Kumpulkan semua section yang ditemukan beserta posisinya
     sections = []
     if url_match:
-        sections.append(("url", url_match.end()))
+        sections.append(("url", url_match.end(), url_match.start()))
     if header_match:
-        sections.append(("headers", header_match.end()))
+        sections.append(("headers", header_match.end(), header_match.start()))
     if request_body_match:
-        sections.append(("request_body", request_body_match.end()))
+        sections.append(("request_body", request_body_match.end(), request_body_match.start()))
     if response_match:
-        sections.append(("response", response_match.end()))
+        sections.append(("response", response_match.end(), response_match.start()))
 
     # Jika tidak ada label yang ditemukan, cek apakah dimulai dengan URL langsung
     if not sections:
         # Cek apakah dimulai dengan http:// atau https://
         if text.startswith("http://") or text.startswith("https://"):
-            # Anggap baris pertama adalah URL
+            # Anggap baris pertama adalah URL, lalu cari sections setelahnya
             lines = text.split('\n')
             result["url"] = lines[0].strip()
             # Sisanya mungkin response atau body
@@ -173,24 +177,27 @@ def parse_remarks_mitra_hit(remarks_text):
             return result
         return None
 
-    # Sort berdasarkan posisi
+    # Jika ada sections tapi teks dimulai dengan URL langsung (tanpa label "URL:")
+    # dan tidak ada url_match, tambahkan URL dari awal teks
+    if not url_match:
+        first_line = text.split('\n')[0].strip()
+        if first_line.startswith("http://") or first_line.startswith("https://"):
+            # Posisi awal konten URL = 0, end = akhir baris pertama + newline
+            url_content_end = text.find('\n')
+            if url_content_end == -1:
+                url_content_end = len(text)
+            result["url"] = first_line
+            # Tidak perlu menambahkan ke sections karena sudah di-set langsung
+
+    # Sort berdasarkan posisi start content
     sections.sort(key=lambda x: x[1])
 
     # Extract konten masing-masing section
-    for i, (section_name, start_pos) in enumerate(sections):
+    for i, (section_name, start_pos, label_start) in enumerate(sections):
         if i + 1 < len(sections):
             # Ada section berikutnya, ambil sampai awal label berikutnya
-            next_key = sections[i + 1][0]
-            if next_key == "url":
-                next_match = url_match
-            elif next_key == "headers":
-                next_match = header_match
-            elif next_key == "request_body":
-                next_match = request_body_match
-            elif next_key == "response":
-                next_match = response_match
-            next_section_start = next_match.start()
-            content = text[start_pos:next_section_start].strip()
+            next_label_start = sections[i + 1][2]
+            content = text[start_pos:next_label_start].strip()
         else:
             # Section terakhir, ambil sampai akhir
             content = text[start_pos:].strip()
@@ -210,9 +217,13 @@ def parse_remarks_bss_hit(remarks_text):
         - Request Body: {json}
         - Response: {json}
 
-    Variasi:
-        - body: {json}  (pengganti Request Body)
-        - response: {json}  (huruf kecil)
+    Variasi yang didukung:
+        - "- url:" atau "- url :" atau "* url:" atau "* url :"
+        - "- headers:" atau "- headers :" atau "* headers:" atau "- header:"
+        - "- body:" atau "- Body:" atau "- Request Body:" atau "* body:"
+        - "- response:" atau "- Response:" atau "* response:" atau "- response :"
+        - Baris yang dimulai dengan "#" (seperti #1, #inquiry, #validate) sebagai section marker
+        - Multiple sections (#validate dan #commit) digabungkan
 
     Returns:
         dict with keys: url, headers, request_body, response
@@ -220,6 +231,35 @@ def parse_remarks_bss_hit(remarks_text):
     if not remarks_text or not remarks_text.strip():
         return None
 
+    text = remarks_text.strip()
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+    # Cek apakah ada multiple sections (#validate, #commit, #1, #2, dll)
+    section_marker_pattern = r'(?:^|\n)\s*#\s*\w+'
+    section_markers = list(re.finditer(section_marker_pattern, text))
+
+    if len(section_markers) >= 2:
+        # Multiple sections - gabungkan semua
+        return _parse_bss_multi_section(text, section_markers)
+
+    # Single section (mungkin ada satu # marker di awal yang di-skip)
+    # Hapus baris yang dimulai dengan # (section markers)
+    lines = text.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        if re.match(r'^\s*#', line):
+            continue
+        cleaned_lines.append(line)
+    cleaned_text = '\n'.join(cleaned_lines).strip()
+
+    if not cleaned_text:
+        return None
+
+    return _parse_bss_single_section(cleaned_text)
+
+
+def _parse_bss_single_section(text):
+    """Parse a single BSS HIT section (no # markers)."""
     result = {
         "url": "",
         "headers": "",
@@ -227,14 +267,12 @@ def parse_remarks_bss_hit(remarks_text):
         "response": ""
     }
 
-    text = remarks_text.strip()
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
-
-    # Pattern untuk format "- key: value" (bisa multiline value)
-    url_pattern = r'(?i)-\s*url\s*:\s*'
-    headers_pattern = r'(?i)-\s*headers?\s*:\s*'
-    request_body_pattern = r'(?i)-\s*(?:Request\s*Body|body)\s*:\s*'
-    response_pattern = r'(?i)-\s*(?:Response|response)\s*:\s*'
+    # Pattern untuk format "- key: value" atau "* key: value"
+    # Mendukung spasi sebelum colon dan setelah bullet
+    url_pattern = r'(?i)(?:^|\n)\s*[-*]\s*url\s*:\s*'
+    headers_pattern = r'(?i)(?:^|\n)\s*[-*]\s*headers?\s*:\s*'
+    request_body_pattern = r'(?i)(?:^|\n)\s*[-*]\s*(?:Request\s*Body|body)\s*:\s*'
+    response_pattern = r'(?i)(?:^|\n)\s*[-*]\s*(?:Response|response)\s*:\s*'
 
     # Cari posisi masing-masing
     url_match = re.search(url_pattern, text)
@@ -245,13 +283,13 @@ def parse_remarks_bss_hit(remarks_text):
     # Kumpulkan sections yang ditemukan
     sections = []
     if url_match:
-        sections.append(("url", url_match.end()))
+        sections.append(("url", url_match.end(), url_match.start()))
     if headers_match:
-        sections.append(("headers", headers_match.end()))
+        sections.append(("headers", headers_match.end(), headers_match.start()))
     if request_body_match:
-        sections.append(("request_body", request_body_match.end()))
+        sections.append(("request_body", request_body_match.end(), request_body_match.start()))
     if response_match:
-        sections.append(("response", response_match.end()))
+        sections.append(("response", response_match.end(), response_match.start()))
 
     if not sections:
         return None
@@ -260,23 +298,98 @@ def parse_remarks_bss_hit(remarks_text):
     sections.sort(key=lambda x: x[1])
 
     # Extract konten
-    for i, (section_name, start_pos) in enumerate(sections):
+    for i, (section_name, start_pos, label_start) in enumerate(sections):
         if i + 1 < len(sections):
-            # Ambil sampai awal pattern berikutnya
-            next_key = sections[i + 1][0]
-            if next_key == "url":
-                next_match = url_match
-            elif next_key == "headers":
-                next_match = headers_match
-            elif next_key == "request_body":
-                next_match = request_body_match
-            elif next_key == "response":
-                next_match = response_match
-            content = text[start_pos:next_match.start()].strip()
+            # Ambil sampai awal label berikutnya
+            next_label_start = sections[i + 1][2]
+            content = text[start_pos:next_label_start].strip()
         else:
             content = text[start_pos:].strip()
 
         result[section_name] = content
+
+    return result
+
+
+def _parse_bss_multi_section(text, section_markers):
+    """
+    Parse multiple BSS HIT sections (e.g., #validate and #commit).
+    Gabungkan semua sections menjadi satu output dengan separator.
+    """
+    # Split text into sections based on markers
+    section_texts = []
+    section_names = []
+
+    for i, marker in enumerate(section_markers):
+        # Extract section name from marker
+        marker_text = text[marker.start():marker.end()].strip()
+        # Remove the # prefix
+        section_name = marker_text.lstrip('#').strip()
+        section_names.append(section_name)
+
+        # Get content between this marker and the next
+        start = marker.end()
+        if i + 1 < len(section_markers):
+            end = section_markers[i + 1].start()
+        else:
+            end = len(text)
+
+        section_content = text[start:end].strip()
+        section_texts.append(section_content)
+
+    # Parse each section individually
+    parsed_sections = []
+    valid_section_names = []
+    for idx, section_content in enumerate(section_texts):
+        # Remove any # lines within the section content
+        lines = section_content.split('\n')
+        cleaned_lines = [l for l in lines if not re.match(r'^\s*#', l)]
+        cleaned = '\n'.join(cleaned_lines).strip()
+        if cleaned:
+            parsed = _parse_bss_single_section(cleaned)
+            if parsed and any(parsed.values()):
+                parsed_sections.append(parsed)
+                valid_section_names.append(section_names[idx])
+
+    if not parsed_sections:
+        return None
+
+    if len(parsed_sections) == 1:
+        return parsed_sections[0]
+
+    # Gabungkan multiple parsed sections with separators
+    result = {
+        "url": "",
+        "headers": "",
+        "request_body": "",
+        "response": ""
+    }
+
+    # Collect values per field, paired with their section names
+    urls = [(valid_section_names[i], p.get("url", ""))
+            for i, p in enumerate(parsed_sections) if p.get("url")]
+    headers_list = [(valid_section_names[i], p.get("headers", ""))
+                    for i, p in enumerate(parsed_sections) if p.get("headers")]
+    bodies = [(valid_section_names[i], p.get("request_body", ""))
+              for i, p in enumerate(parsed_sections) if p.get("request_body")]
+    responses = [(valid_section_names[i], p.get("response", ""))
+                 for i, p in enumerate(parsed_sections) if p.get("response")]
+
+    def combine_field(items):
+        """Combine field values with section separators."""
+        if not items:
+            return ""
+        if len(items) == 1:
+            return items[0][1]
+        return "\n\n".join(
+            f"--- {name.upper()} ---\n{value}"
+            for name, value in items
+        )
+
+    result["url"] = combine_field(urls)
+    result["headers"] = combine_field(headers_list)
+    result["request_body"] = combine_field(bodies)
+    result["response"] = combine_field(responses)
 
     return result
 
