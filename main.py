@@ -99,35 +99,117 @@ MITRA_HIT_SCENARIOS = ["2", "3", "4", "5", "6"]
 # PARSER KOLOM REMARKS
 # ============================================================
 
-def parse_remarks_mitra_hit(remarks_text):
+# Header-like keys yang umum ditemukan di HTTP headers
+_HEADER_KEYS = [
+    "x-timestamp", "x-partner-id", "x-signature", "authorization",
+    "x-external-id", "channel-id", "content-type", "x-forwarded-for",
+    "x-forwarded-host", "x-forwarded-proto", "user-agent", "accept",
+    "host", "connection", "cache-control", "pragma", "x-request-id",
+    "x-api-key", "x-client-key", "x-client-secret",
+]
+
+
+def _is_header_like_json(text):
     """
-    Parse format Remarks dari 'Mitra HIT' (Skenario 2, 3, 4, 5, 6).
-
-    Format yang diharapkan:
-        URL:
-        [url]
-
-        Header:
-        [headers - bisa multi-line key: value pairs]
-
-        RequestBody:
-        [json body]
-
-        Response:
-        [json response]
-
-    Variasi yang didukung:
-        - "URL:" atau "URL :" atau langsung https://...
-        - "Header:" atau "Headers:" atau "Header :" atau "Headers :"
-        - "RequestBody:" atau "Request Body:" atau "Request body:" atau "RequestBody :"
-        - "Response:" atau "Response :"
-
-    Returns:
-        dict with keys: url, headers, request_body, response
+    Check if a JSON block looks like HTTP headers (contains header-like keys).
+    Returns True if the JSON contains keys commonly found in HTTP headers.
     """
-    if not remarks_text or not remarks_text.strip():
-        return None
+    text_lower = text.lower()
+    header_indicators = 0
+    for key in _HEADER_KEYS:
+        if key in text_lower:
+            header_indicators += 1
+    # If at least 2 header-like keys found, it's likely headers
+    return header_indicators >= 2
 
+
+def _is_response_like_json(text):
+    """
+    Check if a JSON block looks like an API response.
+    """
+    text_lower = text.lower()
+    return "responsecode" in text_lower or "responsemessage" in text_lower or \
+           '"responsecode"' in text_lower or '"responsemessage"' in text_lower
+
+
+def _is_header_key_value_line(line):
+    """
+    Check if a line looks like a header in Key: Value format (not JSON).
+    E.g., "X-TIMESTAMP: 2025-07-30T14:28:56+07:00"
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith('{') or stripped.startswith('['):
+        return False
+    # Must have a colon with a key part that looks like a header name
+    if ':' not in stripped:
+        return False
+    key_part = stripped.split(':', 1)[0].strip()
+    # Header names are typically alphanumeric with hyphens, no spaces
+    if not key_part:
+        return False
+    # Check if it matches common header pattern (letters, digits, hyphens)
+    if re.match(r'^[A-Za-z][A-Za-z0-9\-]*$', key_part):
+        key_lower = key_part.lower()
+        for hk in _HEADER_KEYS:
+            if key_lower == hk:
+                return True
+        # Even if not in the known list, if it looks like a header name
+        # (starts with X- or common patterns)
+        if key_lower.startswith('x-') or key_lower in [
+            'authorization', 'content-type', 'accept', 'host',
+            'connection', 'pragma', 'cookie', 'referer', 'origin'
+        ]:
+            return True
+    return False
+
+
+def _extract_url_from_text(text):
+    """
+    Extract URL from text by finding lines containing http:// or https://.
+    Strips any label prefix like "URL:", "- url:", etc.
+    Returns the first URL found, or empty string.
+    """
+    for line in text.split('\n'):
+        stripped = line.strip()
+        # Find http:// or https:// in the line
+        match = re.search(r'(https?://\S+)', stripped)
+        if match:
+            return match.group(1).rstrip(',').rstrip('"').rstrip("'")
+    return ""
+
+
+def _extract_json_blocks(text):
+    """
+    Extract all JSON blocks from text (objects starting with { and ending with }).
+    Returns list of tuples: (start_pos, end_pos, json_text)
+    Handles nested braces.
+    """
+    blocks = []
+    i = 0
+    while i < len(text):
+        if text[i] == '{':
+            depth = 0
+            start = i
+            while i < len(text):
+                if text[i] == '{':
+                    depth += 1
+                elif text[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        block_text = text[start:i + 1]
+                        blocks.append((start, i + 1, block_text))
+                        break
+                i += 1
+        i += 1
+    return blocks
+
+
+def _parse_with_labels(text):
+    """
+    Try to parse text using label/keyword detection.
+    Supports both Format A (Mitra HIT) and Format B (BSS HIT) labels.
+    Returns dict or None if no labels found.
+    """
     result = {
         "url": "",
         "headers": "",
@@ -135,24 +217,19 @@ def parse_remarks_mitra_hit(remarks_text):
         "response": ""
     }
 
-    text = remarks_text.strip()
+    # Combined patterns for both formats:
+    # Format A: "URL:", "Header:", "Headers:", "RequestBody:", "Request Body:", "Response:"
+    # Format B: "- url:", "- headers:", "- Request Body:", "- body:", "- Response:"
+    url_pattern = r'(?i)(?:^|\n)\s*[-*]?\s*url\s*:\s*'
+    header_pattern = r'(?i)(?:^|\n)\s*[-*]?\s*headers?\s*:\s*'
+    request_body_pattern = r'(?i)(?:^|\n)\s*[-*]?\s*(?:Request\s*Body|RequestBody|body)\s*:\s*'
+    response_pattern = r'(?i)(?:^|\n)\s*[-*]?\s*Response\s*:\s*'
 
-    # Normalisasi line endings
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
-
-    # Pattern: mencari section berdasarkan label (mendukung spasi sebelum colon)
-    url_pattern = r'(?i)(?:^|\n)\s*URL\s*:\s*\n?'
-    header_pattern = r'(?i)(?:^|\n)\s*Headers?\s*:\s*\n?'
-    request_body_pattern = r'(?i)(?:^|\n)\s*(?:Request\s*Body|RequestBody)\s*:\s*\n?'
-    response_pattern = r'(?i)(?:^|\n)\s*Response\s*:\s*\n?'
-
-    # Cari posisi masing-masing section
     url_match = re.search(url_pattern, text)
     header_match = re.search(header_pattern, text)
     request_body_match = re.search(request_body_pattern, text)
     response_match = re.search(response_pattern, text)
 
-    # Kumpulkan semua section yang ditemukan beserta posisinya
     sections = []
     if url_match:
         sections.append(("url", url_match.end(), url_match.start()))
@@ -163,67 +240,232 @@ def parse_remarks_mitra_hit(remarks_text):
     if response_match:
         sections.append(("response", response_match.end(), response_match.start()))
 
-    # Jika tidak ada label yang ditemukan, cek apakah dimulai dengan URL langsung
     if not sections:
-        # Cek apakah dimulai dengan http:// atau https://
-        if text.startswith("http://") or text.startswith("https://"):
-            # Anggap baris pertama adalah URL, lalu cari sections setelahnya
-            lines = text.split('\n')
-            result["url"] = lines[0].strip()
-            # Sisanya mungkin response atau body
-            remaining = '\n'.join(lines[1:]).strip()
-            if remaining:
-                result["response"] = remaining
-            return result
         return None
 
-    # Jika ada sections tapi teks dimulai dengan URL langsung (tanpa label "URL:")
-    # dan tidak ada url_match, tambahkan URL dari awal teks
+    # If no URL label found, check if text starts with a URL (before any label)
     if not url_match:
-        first_line = text.split('\n')[0].strip()
-        if first_line.startswith("http://") or first_line.startswith("https://"):
-            # Posisi awal konten URL = 0, end = akhir baris pertama + newline
-            url_content_end = text.find('\n')
-            if url_content_end == -1:
-                url_content_end = len(text)
-            result["url"] = first_line
-            # Tidak perlu menambahkan ke sections karena sudah di-set langsung
+        first_label_start = min(s[2] for s in sections)
+        # Check lines before the first label for a URL
+        text_before_labels = text[:first_label_start]
+        url_found = _extract_url_from_text(text_before_labels)
+        if url_found:
+            result["url"] = url_found
 
-    # Sort berdasarkan posisi start content
+    # Sort by position
     sections.sort(key=lambda x: x[1])
 
-    # Extract konten masing-masing section
+    # Extract content for each section
     for i, (section_name, start_pos, label_start) in enumerate(sections):
         if i + 1 < len(sections):
-            # Ada section berikutnya, ambil sampai awal label berikutnya
             next_label_start = sections[i + 1][2]
             content = text[start_pos:next_label_start].strip()
         else:
-            # Section terakhir, ambil sampai akhir
             content = text[start_pos:].strip()
-
         result[section_name] = content
 
+    # For URL field, extract just the URL if there's extra text
+    if result["url"]:
+        url_extracted = _extract_url_from_text(result["url"])
+        if url_extracted:
+            result["url"] = url_extracted
+        else:
+            # Maybe the URL is on the same line after the label
+            first_line = result["url"].split('\n')[0].strip()
+            if first_line.startswith("http://") or first_line.startswith("https://"):
+                result["url"] = first_line
+
     return result
+
+
+def _parse_by_content_detection(text):
+    """
+    Parse text by detecting content patterns (URLs, headers, JSON blocks)
+    without relying on labels/keywords.
+
+    Strategy:
+    1. Find URL (line with http:// or https://)
+    2. Find all JSON blocks
+    3. Classify JSON blocks as headers vs request body vs response
+    4. Find header key:value lines between URL and first non-header JSON block
+    """
+    result = {
+        "url": "",
+        "headers": "",
+        "request_body": "",
+        "response": ""
+    }
+
+    # Step 1: Extract URL
+    url = _extract_url_from_text(text)
+    result["url"] = url
+
+    # Step 2: Find all JSON blocks
+    json_blocks = _extract_json_blocks(text)
+
+    if not json_blocks:
+        # No JSON blocks - try to find headers as key:value lines
+        lines = text.split('\n')
+        header_lines = []
+        for line in lines:
+            stripped = line.strip()
+            # Skip URL line
+            if 'http://' in stripped or 'https://' in stripped:
+                continue
+            # Skip empty lines and label lines
+            if not stripped:
+                continue
+            if _is_header_key_value_line(line):
+                header_lines.append(stripped)
+        if header_lines:
+            result["headers"] = '\n'.join(header_lines)
+        return result
+
+    # Step 3: Classify JSON blocks
+    header_json_blocks = []
+    body_json_blocks = []
+    response_json_blocks = []
+
+    for start, end, block_text in json_blocks:
+        if _is_header_like_json(block_text):
+            header_json_blocks.append((start, end, block_text))
+        elif _is_response_like_json(block_text):
+            response_json_blocks.append((start, end, block_text))
+        else:
+            body_json_blocks.append((start, end, block_text))
+
+    # If we have unclassified blocks, use position-based heuristic:
+    # - First unclassified after headers = request body
+    # - Last block in text = response (if not already classified)
+    if not response_json_blocks and body_json_blocks and len(body_json_blocks) >= 2:
+        # Last body block is likely the response
+        response_json_blocks.append(body_json_blocks.pop())
+    elif not response_json_blocks and body_json_blocks and len(body_json_blocks) == 1:
+        # Single unclassified JSON - if no header blocks either, it might be a response
+        # Check position: if it's the last thing in text, treat as response
+        if not header_json_blocks:
+            response_json_blocks.append(body_json_blocks.pop())
+
+    # Assign results
+    if header_json_blocks:
+        result["headers"] = header_json_blocks[0][2]
+    if body_json_blocks:
+        result["request_body"] = body_json_blocks[0][2]
+    if response_json_blocks:
+        result["response"] = response_json_blocks[-1][2]
+
+    # Step 4: If no JSON headers found, look for key:value header lines
+    if not header_json_blocks:
+        lines = text.split('\n')
+        header_lines = []
+        url_line_found = False
+        # Find headers between URL and first JSON block
+        first_json_start = json_blocks[0][0] if json_blocks else len(text)
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # Get the approximate position of this line in text
+            line_start = text.find(stripped)
+            if line_start >= first_json_start:
+                break
+            if 'http://' in stripped or 'https://' in stripped:
+                url_line_found = True
+                continue
+            if _is_header_key_value_line(line):
+                header_lines.append(stripped)
+        if header_lines:
+            result["headers"] = '\n'.join(header_lines)
+
+    return result
+
+
+def parse_remarks_mitra_hit(remarks_text):
+    """
+    Parse format Remarks dari 'Mitra HIT' (Skenario 2, 3, 4, 5, 6).
+
+    Uses a content-detection approach:
+    1. First tries label-based parsing (URL:, Header:, RequestBody:, Response:)
+    2. Falls back to content detection (finds URLs, headers, JSON blocks by pattern)
+
+    Supported formats:
+        FORMAT A (with labels):
+            URL:
+            https://...
+
+            Header:
+            X-TIMESTAMP: ...
+            Authorization: Bearer ...
+
+            RequestBody:
+            {"key": "value"}
+
+            Response:
+            {"responseCode": "..."}
+
+        FORMAT (no labels or partial labels):
+            Detects URL by http/https pattern
+            Detects headers by Key: Value pattern
+            Detects request body and response by JSON content analysis
+
+    Returns:
+        dict with keys: url, headers, request_body, response
+    """
+    if not remarks_text or not remarks_text.strip():
+        return None
+
+    text = remarks_text.strip()
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+    # Strategy 1: Try label-based parsing first
+    result = _parse_with_labels(text)
+    if result and any(result.values()):
+        # Validate: if we got at least a URL or some meaningful content, return it
+        if result["url"] or result["headers"] or result["request_body"] or result["response"]:
+            return result
+
+    # Strategy 2: Content-based detection (fallback)
+    result = _parse_by_content_detection(text)
+    if result and any(result.values()):
+        return result
+
+    # Strategy 3: If text starts with URL directly
+    if text.startswith("http://") or text.startswith("https://"):
+        lines = text.split('\n')
+        fallback_result = {
+            "url": lines[0].strip(),
+            "headers": "",
+            "request_body": "",
+            "response": ""
+        }
+        remaining = '\n'.join(lines[1:]).strip()
+        if remaining:
+            fallback_result["response"] = remaining
+        return fallback_result
+
+    return None
 
 
 def parse_remarks_bss_hit(remarks_text):
     """
     Parse format Remarks dari 'BSS YANG HIT' (Skenario 7, 8, 9).
 
-    Format yang diharapkan:
-        - url: [url]
-        - headers: {json}
-        - Request Body: {json}
-        - Response: {json}
+    Uses a content-detection approach:
+    1. Handles multiple sections (#validate, #commit, etc.)
+    2. First tries label-based parsing (- url:, - headers:, - Request Body:, - Response:)
+    3. Falls back to content detection (finds URLs, headers, JSON blocks by pattern)
 
-    Variasi yang didukung:
-        - "- url:" atau "- url :" atau "* url:" atau "* url :"
-        - "- headers:" atau "- headers :" atau "* headers:" atau "- header:"
-        - "- body:" atau "- Body:" atau "- Request Body:" atau "* body:"
-        - "- response:" atau "- Response:" atau "* response:" atau "- response :"
-        - Baris yang dimulai dengan "#" (seperti #1, #inquiry, #validate) sebagai section marker
-        - Multiple sections (#validate dan #commit) digabungkan
+    Supported formats:
+        FORMAT B (with bullet markers):
+            - url: https://...
+            - headers: {"key": "value", ...}
+            - Request Body: {"key": "value"}
+            - Response: {"responseCode": "..."}
+
+        FORMAT (no labels):
+            Detects URL by http/https pattern
+            Detects headers by JSON with header-like keys
+            Detects request body and response by JSON content analysis
 
     Returns:
         dict with keys: url, headers, request_body, response
@@ -259,56 +501,22 @@ def parse_remarks_bss_hit(remarks_text):
 
 
 def _parse_bss_single_section(text):
-    """Parse a single BSS HIT section (no # markers)."""
-    result = {
-        "url": "",
-        "headers": "",
-        "request_body": "",
-        "response": ""
-    }
+    """
+    Parse a single BSS HIT section.
+    Uses label-based parsing first, then falls back to content detection.
+    """
+    # Strategy 1: Try label-based parsing
+    result = _parse_with_labels(text)
+    if result and any(result.values()):
+        if result["url"] or result["headers"] or result["request_body"] or result["response"]:
+            return result
 
-    # Pattern untuk format "- key: value" atau "* key: value"
-    # Mendukung spasi sebelum colon dan setelah bullet
-    url_pattern = r'(?i)(?:^|\n)\s*[-*]\s*url\s*:\s*'
-    headers_pattern = r'(?i)(?:^|\n)\s*[-*]\s*headers?\s*:\s*'
-    request_body_pattern = r'(?i)(?:^|\n)\s*[-*]\s*(?:Request\s*Body|body)\s*:\s*'
-    response_pattern = r'(?i)(?:^|\n)\s*[-*]\s*(?:Response|response)\s*:\s*'
+    # Strategy 2: Content-based detection
+    result = _parse_by_content_detection(text)
+    if result and any(result.values()):
+        return result
 
-    # Cari posisi masing-masing
-    url_match = re.search(url_pattern, text)
-    headers_match = re.search(headers_pattern, text)
-    request_body_match = re.search(request_body_pattern, text)
-    response_match = re.search(response_pattern, text)
-
-    # Kumpulkan sections yang ditemukan
-    sections = []
-    if url_match:
-        sections.append(("url", url_match.end(), url_match.start()))
-    if headers_match:
-        sections.append(("headers", headers_match.end(), headers_match.start()))
-    if request_body_match:
-        sections.append(("request_body", request_body_match.end(), request_body_match.start()))
-    if response_match:
-        sections.append(("response", response_match.end(), response_match.start()))
-
-    if not sections:
-        return None
-
-    # Sort berdasarkan posisi
-    sections.sort(key=lambda x: x[1])
-
-    # Extract konten
-    for i, (section_name, start_pos, label_start) in enumerate(sections):
-        if i + 1 < len(sections):
-            # Ambil sampai awal label berikutnya
-            next_label_start = sections[i + 1][2]
-            content = text[start_pos:next_label_start].strip()
-        else:
-            content = text[start_pos:].strip()
-
-        result[section_name] = content
-
-    return result
+    return None
 
 
 def _parse_bss_multi_section(text, section_markers):
@@ -398,6 +606,10 @@ def parse_remarks(remarks_text, scenario_prefix):
     """
     Parse kolom Remarks berdasarkan format yang sesuai dengan skenario.
 
+    Uses content-detection approach. The scenario_prefix determines which
+    parser to try first, but both parsers use the same underlying content
+    detection logic.
+
     Args:
         remarks_text: Teks dari kolom Remarks
         scenario_prefix: Prefix skenario (e.g., "2", "3", "7")
@@ -410,9 +622,17 @@ def parse_remarks(remarks_text, scenario_prefix):
         return None
 
     if scenario_prefix in BSS_HIT_SCENARIOS:
-        return parse_remarks_bss_hit(remarks_text)
-    elif scenario_prefix in MITRA_HIT_SCENARIOS:
+        result = parse_remarks_bss_hit(remarks_text)
+        if result and any(result.values()):
+            return result
+        # Fallback to mitra parser
         return parse_remarks_mitra_hit(remarks_text)
+    elif scenario_prefix in MITRA_HIT_SCENARIOS:
+        result = parse_remarks_mitra_hit(remarks_text)
+        if result and any(result.values()):
+            return result
+        # Fallback to bss parser
+        return parse_remarks_bss_hit(remarks_text)
     else:
         # Skenario 1 (Balance) - coba kedua format
         result = parse_remarks_mitra_hit(remarks_text)
