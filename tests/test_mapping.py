@@ -214,7 +214,8 @@ class TestMapUatToLampiran:
         assert result["API Balance Inquiry"][0]['request'] == ""
         assert result["API Balance Inquiry"][0]['response'] == ""
         assert result["API Balance Inquiry"][0]['notes'] == "Tidak dites"
-        assert result["API Balance Inquiry"][0]['result'] == "Tidak dites"
+        # Result mapped: "Tidak dites" -> "N/A"
+        assert result["API Balance Inquiry"][0]['result'] == "N/A"
 
     def test_berhasil_without_remarks(self):
         """Test handling ketika Berhasil tapi Remarks kosong."""

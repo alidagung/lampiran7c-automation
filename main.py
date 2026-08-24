@@ -37,6 +37,32 @@ OUTPUT_FILENAME = "Lampiran 7C - Hasil UAT.docx"
 # Sheet name di file UAT Script
 UAT_SHEET_NAME = "UAT Script"
 
+# Kolom index di UAT Script (0-based, dengan kolom A kosong)
+# Kolom A (index 0): KOSONG
+# Kolom B (index 1): Kategori Tes
+# Kolom C (index 2): Nama Modul
+# Kolom D (index 3): Nomor Skenario
+# Kolom E (index 4): Nomor Kasus Tes (contoh: 1.1, 2.3, 7.15)
+# Kolom F (index 5): Langkah Tes
+# Kolom G (index 6): Hasil yang diharapkan
+# Kolom H (index 7): Hasil Aktual
+# Kolom I (index 8): Remarks (berisi log URL, Headers, Request Body, Response)
+# Kolom J (index 9): Tanggal Pelaksanaan
+# Kolom K (index 10): Jenis Script
+# Kolom L (index 11): Pelaksana
+
+COL_KATEGORI_TES = 1
+COL_NAMA_MODUL = 2
+COL_NOMOR_SKENARIO = 3
+COL_NOMOR_KASUS_TES = 4
+COL_LANGKAH_TES = 5
+COL_HASIL_DIHARAPKAN = 6
+COL_HASIL_AKTUAL = 7
+COL_REMARKS = 8
+COL_TANGGAL = 9
+COL_JENIS_SCRIPT = 10
+COL_PELAKSANA = 11
+
 # Definisi 6 section API di Lampiran 7C
 # Format: (nama_lampiran, jumlah_skenario)
 LAMPIRAN_SECTIONS = [
@@ -110,13 +136,7 @@ def parse_remarks_mitra_hit(remarks_text):
     # Normalisasi line endings
     text = text.replace('\r\n', '\n').replace('\r', '\n')
 
-    # Coba parse dengan label-label yang dikenal
     # Pattern: mencari section berdasarkan label
-    # Labels yang mungkin: URL:, Header:, RequestBody:, Response:
-    # Variasi: url:, Headers:, Request Body:, header:
-
-    # Split berdasarkan pattern label
-    # Gunakan regex untuk menangkap berbagai variasi
     url_pattern = r'(?i)(?:^|\n)\s*(?:URL)\s*:\s*\n?'
     header_pattern = r'(?i)(?:^|\n)\s*(?:Headers?)\s*:\s*\n?'
     request_body_pattern = r'(?i)(?:^|\n)\s*(?:Request\s*Body|RequestBody)\s*:\s*\n?'
@@ -160,15 +180,14 @@ def parse_remarks_mitra_hit(remarks_text):
     for i, (section_name, start_pos) in enumerate(sections):
         if i + 1 < len(sections):
             # Ada section berikutnya, ambil sampai awal label berikutnya
-            next_section_start = None
-            # Cari posisi label berikutnya (termasuk label-nya)
-            if sections[i + 1][0] == "url":
+            next_key = sections[i + 1][0]
+            if next_key == "url":
                 next_match = url_match
-            elif sections[i + 1][0] == "headers":
+            elif next_key == "headers":
                 next_match = header_match
-            elif sections[i + 1][0] == "request_body":
+            elif next_key == "request_body":
                 next_match = request_body_match
-            elif sections[i + 1][0] == "response":
+            elif next_key == "response":
                 next_match = response_match
             next_section_start = next_match.start()
             content = text[start_pos:next_section_start].strip()
@@ -212,7 +231,6 @@ def parse_remarks_bss_hit(remarks_text):
     text = text.replace('\r\n', '\n').replace('\r', '\n')
 
     # Pattern untuk format "- key: value" (bisa multiline value)
-    # Kita cari semua keys yang dikenal
     url_pattern = r'(?i)-\s*url\s*:\s*'
     headers_pattern = r'(?i)-\s*headers?\s*:\s*'
     request_body_pattern = r'(?i)-\s*(?:Request\s*Body|body)\s*:\s*'
@@ -297,15 +315,100 @@ def parse_remarks(remarks_text, scenario_prefix):
 # EXCEL READER
 # ============================================================
 
+def get_cell_value(row, index):
+    """Safely get cell value from a row tuple by index."""
+    if index < len(row) and row[index] is not None:
+        return str(row[index]).strip()
+    return ""
+
+
+def detect_section_header(row):
+    """
+    Detect if a row is a section header.
+
+    Section header rules:
+    - Kolom E (Nomor Kasus Tes, index 4) HARUS KOSONG
+    - Kolom F (Langkah Tes, index 5) HARUS KOSONG
+    - Teks section muncul di kolom B (index 1) atau kolom C (index 2)
+
+    Returns:
+        str: Detected section name, or None if not a section header
+    """
+    # Kolom E (Nomor Kasus Tes) harus kosong
+    nomor_kasus = get_cell_value(row, COL_NOMOR_KASUS_TES)
+    if nomor_kasus:
+        return None
+
+    # Kolom F (Langkah Tes) harus kosong
+    langkah_tes = get_cell_value(row, COL_LANGKAH_TES)
+    if langkah_tes:
+        return None
+
+    # Cek teks di kolom B atau C
+    kategori_tes = get_cell_value(row, COL_KATEGORI_TES)
+    nama_modul = get_cell_value(row, COL_NAMA_MODUL)
+
+    # Gabungkan kedua kolom untuk pengecekan
+    text_to_check = kategori_tes + " " + nama_modul
+
+    # Section keywords - ordered from most specific to least specific
+    # to ensure exact matching (e.g., "Transfer VA Prima" before "Transfer VA")
+    section_keywords = [
+        "Interbank Transfer via BI FAST",
+        "Transfer VA Prima",
+        "Transfer VA BI FAST",
+        "Balance Services",
+        "Intrabank Transfer",
+        "Interbank Transfer",
+        "RTGS Transfer",
+        "SKNBI Transfer",
+        "Transfer VA",
+    ]
+
+    for keyword in section_keywords:
+        # Check in both kolom B and kolom C
+        if keyword.lower() in kategori_tes.lower() or keyword.lower() in nama_modul.lower():
+            # For "Transfer VA" (without Prima/BI FAST), we need exact matching
+            # to avoid matching "Transfer VA Prima" or "Transfer VA BI FAST"
+            if keyword == "Transfer VA":
+                # Make sure neither kolom B nor kolom C contains "Prima" or "BI FAST"
+                combined_lower = text_to_check.lower()
+                if "prima" in combined_lower or "bi fast" in combined_lower:
+                    continue
+            elif keyword == "Interbank Transfer":
+                # Make sure it's not "Interbank Transfer via BI FAST"
+                combined_lower = text_to_check.lower()
+                if "bi fast" in combined_lower or "via bi" in combined_lower:
+                    continue
+            return keyword
+
+    return None
+
+
 def read_uat_script(filepath):
     """
     Membaca file UAT Script.xlsx dan mengembalikan data terstruktur.
+
+    Kolom di UAT Script dimulai dari kolom B (kolom A kosong):
+    - B (1): Kategori Tes
+    - C (2): Nama Modul
+    - D (3): Nomor Skenario
+    - E (4): Nomor Kasus Tes
+    - F (5): Langkah Tes
+    - G (6): Hasil yang diharapkan
+    - H (7): Hasil Aktual
+    - I (8): Remarks
+    - J (9): Tanggal Pelaksanaan
+    - K (10): Jenis Script
+    - L (11): Pelaksana
 
     Returns:
         dict: {
             section_header: [
                 {
-                    'nomor_skenario': str,  # e.g., "1.1", "2.3"
+                    'nama_modul': str,
+                    'nomor_skenario': str,
+                    'nomor_kasus_tes': str,
                     'langkah_tes': str,
                     'hasil_diharapkan': str,
                     'hasil_aktual': str,
@@ -332,49 +435,26 @@ def read_uat_script(filepath):
     current_section = None
     rows_list = list(ws.iter_rows(min_row=1, values_only=True))
 
-    # Identifikasi header row (baris pertama biasanya header kolom)
-    # Kolom: Kategori Tes, Nama Modul, Nomor Skenario, Nomor Kasus Tes,
-    #         Langkah Tes, Hasil yang diharapkan, Hasil Aktual, Remarks,
-    #         Tanggal Pelaksanaan, Jenis Script, Pelaksana
+    # Identifikasi header row (baris dengan label kolom)
+    # Cek kolom B (index 1) untuk label "Kategori Tes" atau similar
     header_row_idx = 0
-
     for idx, row in enumerate(rows_list):
-        if row and row[0] and str(row[0]).strip().lower() in ['kategori tes', 'kategori', 'no']:
+        if not row or len(row) <= COL_KATEGORI_TES:
+            continue
+        cell_val = get_cell_value(row, COL_KATEGORI_TES)
+        if cell_val.lower() in ['kategori tes', 'kategori', 'no']:
             header_row_idx = idx
             break
 
-    # Process data rows
+    # Process data rows (after header)
     for idx in range(header_row_idx + 1, len(rows_list)):
         row = rows_list[idx]
         if not row or all(cell is None or str(cell).strip() == '' for cell in row):
             continue
 
         # Cek apakah ini section header
-        # Section header biasanya hanya punya nilai di kolom pertama atau kedua
-        first_cell = str(row[0]).strip() if row[0] else ""
-        second_cell = str(row[1]).strip() if len(row) > 1 and row[1] else ""
-
-        # Deteksi section header berdasarkan keyword yang dikenal
-        section_keywords = [
-            "Balance Services", "Intrabank Transfer", "Interbank Transfer",
-            "Interbank Transfer via BI FAST", "RTGS Transfer", "SKNBI Transfer",
-            "Transfer VA", "Transfer VA Prima", "Transfer VA BI FAST"
-        ]
-
-        is_section_header = False
-        detected_section = None
-
-        for keyword in section_keywords:
-            if keyword.lower() in first_cell.lower() or keyword.lower() in second_cell.lower():
-                # Pastikan ini bukan data row biasa
-                # Section header biasanya tidak punya nomor skenario (kolom ke-3 atau ke-4 kosong)
-                nomor_col = str(row[3]).strip() if len(row) > 3 and row[3] else ""
-                if not nomor_col or not re.match(r'\d+\.\d+', nomor_col):
-                    is_section_header = True
-                    detected_section = keyword
-                    break
-
-        if is_section_header:
+        detected_section = detect_section_header(row)
+        if detected_section:
             current_section = detected_section
             if current_section not in data:
                 data[current_section] = []
@@ -384,27 +464,19 @@ def read_uat_script(filepath):
         if current_section is None:
             continue
 
-        # Parse data row
-        # Index kolom (0-based):
-        # 0: Kategori Tes
-        # 1: Nama Modul
-        # 2: Nomor Skenario
-        # 3: Nomor Kasus Tes
-        # 4: Langkah Tes
-        # 5: Hasil yang diharapkan
-        # 6: Hasil Aktual
-        # 7: Remarks
-        nomor_kasus = str(row[3]).strip() if len(row) > 3 and row[3] else ""
+        # Parse data row - harus punya Nomor Kasus Tes (kolom E, index 4)
+        nomor_kasus = get_cell_value(row, COL_NOMOR_KASUS_TES)
         if not nomor_kasus:
             continue
 
         row_data = {
-            'nomor_skenario': str(row[2]).strip() if len(row) > 2 and row[2] else "",
+            'nama_modul': get_cell_value(row, COL_NAMA_MODUL),
+            'nomor_skenario': get_cell_value(row, COL_NOMOR_SKENARIO),
             'nomor_kasus_tes': nomor_kasus,
-            'langkah_tes': str(row[4]).strip() if len(row) > 4 and row[4] else "",
-            'hasil_diharapkan': str(row[5]).strip() if len(row) > 5 and row[5] else "",
-            'hasil_aktual': str(row[6]).strip() if len(row) > 6 and row[6] else "",
-            'remarks': str(row[7]).strip() if len(row) > 7 and row[7] else "",
+            'langkah_tes': get_cell_value(row, COL_LANGKAH_TES),
+            'hasil_diharapkan': get_cell_value(row, COL_HASIL_DIHARAPKAN),
+            'hasil_aktual': get_cell_value(row, COL_HASIL_AKTUAL),
+            'remarks': get_cell_value(row, COL_REMARKS),
         }
 
         data[current_section].append(row_data)
@@ -435,6 +507,27 @@ def extract_sub_number(nomor_kasus_tes):
         except ValueError:
             return None
     return None
+
+
+def map_result_value(hasil_aktual):
+    """
+    Map Hasil Aktual ke Result value di Lampiran 7C.
+
+    - "Berhasil" -> "PASS"
+    - "Tidak dites" -> "N/A"
+    - "Gagal" -> "NOT PASS"
+    - Lainnya -> nilai asli
+    """
+    if not hasil_aktual:
+        return ""
+    lower = hasil_aktual.lower().strip()
+    if lower == "berhasil":
+        return "PASS"
+    elif lower == "tidak dites":
+        return "N/A"
+    elif lower == "gagal":
+        return "NOT PASS"
+    return hasil_aktual
 
 
 def map_uat_to_lampiran(uat_data):
@@ -501,16 +594,21 @@ def map_uat_to_lampiran(uat_data):
             request_content = ""
             response_content = ""
             notes = ""
-            result_value = hasil_aktual
+            result_value = map_result_value(hasil_aktual)
+
+            # Service diambil dari kolom Nama Modul
+            service = row_data.get('nama_modul', '') or target_section
 
             # Cek kondisi khusus
-            if hasil_aktual.lower() == "tidak dites":
-                notes = "Tidak dites"
-                result_value = "Tidak dites"
+            if hasil_aktual.lower().strip() == "tidak dites":
+                # Tidak dites: Request dan Response kosong, Notes dari Remarks
+                notes = remarks_text if remarks_text and remarks_text.lower() != "none" else "Tidak dites"
+                request_content = ""
+                response_content = ""
             elif not remarks_text or remarks_text.lower() == "none":
-                notes = remarks_text if remarks_text and remarks_text.lower() != "none" else ""
-                # Request dan Response kosong
-            elif hasil_aktual.lower() == "berhasil" or remarks_text:
+                # Remarks kosong: Request dan Response kosong
+                notes = ""
+            else:
                 # Parse remarks untuk mengambil data
                 parsed = parse_remarks(remarks_text, scenario_prefix)
                 if parsed:
@@ -519,7 +617,14 @@ def map_uat_to_lampiran(uat_data):
                     request_body = parsed.get('request_body', '')
                     response = parsed.get('response', '')
 
-                    request_content = f"URL Endpoint:\n{url}\nHeader Request:\n{headers}\nRequest Body:\n{request_body}"
+                    # Format Request: URL + Headers + Request Body
+                    request_content = (
+                        f"URL Endpoint:\n{url}\n\n"
+                        f"Header Request:\n{headers}\n\n"
+                        f"Request Body:\n{request_body}"
+                    )
+
+                    # Format Response: Response Body saja
                     response_content = f"Response Body:\n{response}"
                 else:
                     # Remarks ada tapi tidak bisa di-parse
@@ -527,8 +632,8 @@ def map_uat_to_lampiran(uat_data):
 
             lampiran_data[target_section][row_idx] = {
                 'no': sub_num,
-                'service': target_section,
-                'scenario': row_data.get('langkah_tes', f"Skenario {row_data['nomor_kasus_tes']}"),
+                'service': service,
+                'scenario': row_data.get('langkah_tes', '') or f"Skenario {row_data['nomor_kasus_tes']}",
                 'expected_result': row_data.get('hasil_diharapkan', ''),
                 'request': request_content,
                 'response': response_content,
@@ -612,7 +717,7 @@ def create_lampiran_document(lampiran_data, output_path):
             else:
                 # Row kosong - isi nomor saja
                 row_cells[0].text = str(row_idx + 1)
-                row_cells[1].text = section_name
+                row_cells[1].text = ""
                 row_cells[2].text = ""
                 row_cells[3].text = ""
                 row_cells[4].text = ""
