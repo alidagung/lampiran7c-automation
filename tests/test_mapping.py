@@ -1,6 +1,7 @@
 """
 Unit tests untuk fungsi mapping skenario di main.py.
 Menguji logika "fill empty only" untuk section yang di-share.
+Menguji bahwa Remarks di-copy langsung ke kolom Request tanpa parsing.
 """
 
 import sys
@@ -48,6 +49,7 @@ class TestMapUatToLampiran:
     def _make_row(self, nomor_kasus, remarks="", hasil_aktual="Berhasil", langkah_tes="", hasil_diharapkan=""):
         """Helper untuk membuat row data UAT."""
         return {
+            'nama_modul': '',
             'nomor_skenario': nomor_kasus.split('.')[0] if '.' in nomor_kasus else "",
             'nomor_kasus_tes': nomor_kasus,
             'langkah_tes': langkah_tes or f"Test case {nomor_kasus}",
@@ -60,8 +62,8 @@ class TestMapUatToLampiran:
         """Test mapping sederhana untuk Balance Services."""
         uat_data = {
             "Balance Services": [
-                self._make_row("1.1", remarks="URL:\nhttps://api.test.com/balance\n\nResponse:\n{\"ok\":true}"),
-                self._make_row("1.2", remarks="URL:\nhttps://api.test.com/balance2\n\nResponse:\n{\"ok\":false}"),
+                self._make_row("1.1", remarks="some remarks content"),
+                self._make_row("1.2", remarks="other remarks content"),
             ]
         }
 
@@ -73,19 +75,71 @@ class TestMapUatToLampiran:
         assert result["API Balance Inquiry"][0]['no'] == 1
         assert result["API Balance Inquiry"][1]['no'] == 2
 
+    def test_remarks_copied_directly_to_request(self):
+        """Test bahwa seluruh isi Remarks di-copy langsung ke kolom Request."""
+        remarks_text = """URL:
+https://api.example.com/v1/transfer
+
+Header:
+X-TIMESTAMP: 2025-07-30T14:28:56+07:00
+Authorization: Bearer token123
+
+RequestBody:
+{"amount": 50000}
+
+Response:
+{"responseCode":"2001700","responseMessage":"Successful"}"""
+
+        uat_data = {
+            "Balance Services": [
+                self._make_row("1.1", remarks=remarks_text, hasil_aktual="Berhasil"),
+            ]
+        }
+
+        result = map_uat_to_lampiran(uat_data)
+
+        row = result["API Balance Inquiry"][0]
+        assert row is not None
+        # Seluruh isi Remarks harus ada di Request, apa adanya
+        assert row['request'] == remarks_text
+        # Response harus kosong
+        assert row['response'] == ""
+
+    def test_remarks_not_parsed(self):
+        """Test bahwa Remarks TIDAK di-parse, langsung copy paste."""
+        remarks_text = "- url: https://api.test.com/va\n- headers: {}\n- body: {}\n- response: {\"r\":\"va1\"}"
+
+        uat_data = {
+            "Transfer VA": [
+                self._make_row("7.1", remarks=remarks_text, hasil_aktual="Berhasil"),
+            ]
+        }
+
+        result = map_uat_to_lampiran(uat_data)
+
+        row = result["API Virtual Account"][0]
+        assert row is not None
+        # Seluruh Remarks harus ada di request tanpa diubah
+        assert row['request'] == remarks_text
+        # Response kosong (tidak di-extract dari Remarks)
+        assert row['response'] == ""
+
     def test_basic_mapping_intrabank(self):
-        """Test mapping untuk Intrabank Transfer."""
+        """Test mapping untuk Intrabank Transfer - Remarks langsung masuk Request."""
+        remarks_text = "URL:\nhttps://api.test.com/intra\n\nHeader:\n{\"auth\":\"x\"}\n\nRequestBody:\n{\"amt\":100}\n\nResponse:\n{\"ok\":true}"
         uat_data = {
             "Intrabank Transfer": [
-                self._make_row("2.1", remarks="URL:\nhttps://api.test.com/intra\n\nHeader:\n{\"auth\":\"x\"}\n\nRequestBody:\n{\"amt\":100}\n\nResponse:\n{\"ok\":true}"),
+                self._make_row("2.1", remarks=remarks_text),
             ]
         }
 
         result = map_uat_to_lampiran(uat_data)
 
         assert result["Intrabank Transfer"][0] is not None
-        assert "URL Endpoint:" in result["Intrabank Transfer"][0]['request']
-        assert "Response Body:" in result["Intrabank Transfer"][0]['response']
+        # Remarks langsung di-copy ke request
+        assert result["Intrabank Transfer"][0]['request'] == remarks_text
+        # Response kosong
+        assert result["Intrabank Transfer"][0]['response'] == ""
 
     def test_fill_empty_only_interbank(self):
         """
@@ -94,32 +148,31 @@ class TestMapUatToLampiran:
         """
         uat_data = {
             "Interbank Transfer": [
-                self._make_row("3.1", remarks="URL:\nhttps://api.test.com/interbank/1\n\nResponse:\n{\"r\":1}"),
-                self._make_row("3.3", remarks="URL:\nhttps://api.test.com/interbank/3\n\nResponse:\n{\"r\":3}"),
+                self._make_row("3.1", remarks="interbank remarks 1"),
+                self._make_row("3.3", remarks="interbank remarks 3"),
                 # 3.2 tidak ada datanya
             ],
             "Interbank Transfer via BI FAST": [
-                self._make_row("4.1", remarks="URL:\nhttps://api.test.com/bifast/1\n\nResponse:\n{\"r\":\"bifast1\"}"),
-                self._make_row("4.2", remarks="URL:\nhttps://api.test.com/bifast/2\n\nResponse:\n{\"r\":\"bifast2\"}"),
-                self._make_row("4.3", remarks="URL:\nhttps://api.test.com/bifast/3\n\nResponse:\n{\"r\":\"bifast3\"}"),
+                self._make_row("4.1", remarks="bifast remarks 1"),
+                self._make_row("4.2", remarks="bifast remarks 2"),
+                self._make_row("4.3", remarks="bifast remarks 3"),
             ],
         }
 
         result = map_uat_to_lampiran(uat_data)
 
-        # Row 1 (index 0): diisi oleh skenario 3 -> URL harus interbank/1
+        # Row 1 (index 0): diisi oleh skenario 3
         assert result["Interbank Transfer"][0] is not None
-        assert "interbank/1" in result["Interbank Transfer"][0]['request']
+        assert result["Interbank Transfer"][0]['request'] == "interbank remarks 1"
 
-        # Row 2 (index 1): TIDAK ada di skenario 3, diisi oleh skenario 4 -> URL harus bifast/2
+        # Row 2 (index 1): TIDAK ada di skenario 3, diisi oleh skenario 4
         assert result["Interbank Transfer"][1] is not None
-        assert "bifast/2" in result["Interbank Transfer"][1]['request']
+        assert result["Interbank Transfer"][1]['request'] == "bifast remarks 2"
 
         # Row 3 (index 2): sudah diisi skenario 3 -> skenario 4 TIDAK overwrite
         assert result["Interbank Transfer"][2] is not None
-        assert "interbank/3" in result["Interbank Transfer"][2]['request']
-        # Pastikan BUKAN bifast/3
-        assert "bifast/3" not in result["Interbank Transfer"][2]['request']
+        assert result["Interbank Transfer"][2]['request'] == "interbank remarks 3"
+        assert "bifast remarks 3" not in result["Interbank Transfer"][2]['request']
 
     def test_fill_empty_only_virtual_account(self):
         """
@@ -128,37 +181,36 @@ class TestMapUatToLampiran:
         """
         uat_data = {
             "Transfer VA": [
-                self._make_row("7.1", remarks="- url: https://api.test.com/va/1\n- headers: {}\n- body: {}\n- response: {\"r\":\"va1\"}"),
-                self._make_row("7.3", remarks="- url: https://api.test.com/va/3\n- headers: {}\n- body: {}\n- response: {\"r\":\"va3\"}"),
+                self._make_row("7.1", remarks="va remarks 1"),
+                self._make_row("7.3", remarks="va remarks 3"),
             ],
             "Transfer VA Prima": [
-                self._make_row("8.1", remarks="- url: https://api.test.com/prima/1\n- headers: {}\n- body: {}\n- response: {\"r\":\"prima1\"}"),
-                self._make_row("8.2", remarks="- url: https://api.test.com/prima/2\n- headers: {}\n- body: {}\n- response: {\"r\":\"prima2\"}"),
+                self._make_row("8.1", remarks="prima remarks 1"),
+                self._make_row("8.2", remarks="prima remarks 2"),
             ],
             "Transfer VA BI FAST": [
-                self._make_row("9.1", remarks="- url: https://api.test.com/vabifast/1\n- headers: {}\n- body: {}\n- response: {\"r\":\"vabifast1\"}"),
-                self._make_row("9.2", remarks="- url: https://api.test.com/vabifast/2\n- headers: {}\n- body: {}\n- response: {\"r\":\"vabifast2\"}"),
-                self._make_row("9.3", remarks="- url: https://api.test.com/vabifast/3\n- headers: {}\n- body: {}\n- response: {\"r\":\"vabifast3\"}"),
+                self._make_row("9.1", remarks="vabifast remarks 1"),
+                self._make_row("9.2", remarks="vabifast remarks 2"),
+                self._make_row("9.3", remarks="vabifast remarks 3"),
             ],
         }
 
         result = map_uat_to_lampiran(uat_data)
 
-        # Row 1 (index 0): diisi oleh skenario 7 -> URL harus va/1
+        # Row 1 (index 0): diisi oleh skenario 7
         assert result["API Virtual Account"][0] is not None
-        assert "va/1" in result["API Virtual Account"][0]['request']
-        # Pastikan BUKAN prima/1 atau vabifast/1
-        assert "prima/1" not in result["API Virtual Account"][0]['request']
-        assert "vabifast/1" not in result["API Virtual Account"][0]['request']
+        assert result["API Virtual Account"][0]['request'] == "va remarks 1"
+        assert "prima" not in result["API Virtual Account"][0]['request']
+        assert "vabifast" not in result["API Virtual Account"][0]['request']
 
-        # Row 2 (index 1): TIDAK ada di skenario 7, diisi oleh skenario 8 -> prima/2
+        # Row 2 (index 1): TIDAK ada di skenario 7, diisi oleh skenario 8
         assert result["API Virtual Account"][1] is not None
-        assert "prima/2" in result["API Virtual Account"][1]['request']
+        assert result["API Virtual Account"][1]['request'] == "prima remarks 2"
 
         # Row 3 (index 2): sudah diisi skenario 7 -> skenario 8 dan 9 TIDAK overwrite
         assert result["API Virtual Account"][2] is not None
-        assert "va/3" in result["API Virtual Account"][2]['request']
-        assert "vabifast/3" not in result["API Virtual Account"][2]['request']
+        assert result["API Virtual Account"][2]['request'] == "va remarks 3"
+        assert "vabifast remarks 3" not in result["API Virtual Account"][2]['request']
 
     def test_fill_empty_va_priority_8_before_9(self):
         """
@@ -168,16 +220,16 @@ class TestMapUatToLampiran:
         uat_data = {
             "Transfer VA": [
                 # Hanya row 1, sisanya kosong
-                self._make_row("7.1", remarks="- url: https://api.test.com/va/1\n- headers: {}\n- body: {}\n- response: {}"),
+                self._make_row("7.1", remarks="va remarks 1"),
             ],
             "Transfer VA Prima": [
-                self._make_row("8.2", remarks="- url: https://api.test.com/prima/2\n- headers: {}\n- body: {}\n- response: {}"),
-                self._make_row("8.4", remarks="- url: https://api.test.com/prima/4\n- headers: {}\n- body: {}\n- response: {}"),
+                self._make_row("8.2", remarks="prima remarks 2"),
+                self._make_row("8.4", remarks="prima remarks 4"),
             ],
             "Transfer VA BI FAST": [
-                self._make_row("9.2", remarks="- url: https://api.test.com/vabifast/2\n- headers: {}\n- body: {}\n- response: {}"),
-                self._make_row("9.3", remarks="- url: https://api.test.com/vabifast/3\n- headers: {}\n- body: {}\n- response: {}"),
-                self._make_row("9.4", remarks="- url: https://api.test.com/vabifast/4\n- headers: {}\n- body: {}\n- response: {}"),
+                self._make_row("9.2", remarks="vabifast remarks 2"),
+                self._make_row("9.3", remarks="vabifast remarks 3"),
+                self._make_row("9.4", remarks="vabifast remarks 4"),
             ],
         }
 
@@ -185,23 +237,40 @@ class TestMapUatToLampiran:
 
         # Row 1 (index 0): diisi skenario 7
         assert result["API Virtual Account"][0] is not None
-        assert "va/1" in result["API Virtual Account"][0]['request']
+        assert result["API Virtual Account"][0]['request'] == "va remarks 1"
 
-        # Row 2 (index 1): kosong di 7, diisi skenario 8 (prima/2)
+        # Row 2 (index 1): kosong di 7, diisi skenario 8 (prima)
         assert result["API Virtual Account"][1] is not None
-        assert "prima/2" in result["API Virtual Account"][1]['request']
+        assert result["API Virtual Account"][1]['request'] == "prima remarks 2"
 
-        # Row 3 (index 2): kosong di 7, tidak ada di 8, diisi skenario 9 (vabifast/3)
+        # Row 3 (index 2): kosong di 7, tidak ada di 8, diisi skenario 9
         assert result["API Virtual Account"][2] is not None
-        assert "vabifast/3" in result["API Virtual Account"][2]['request']
+        assert result["API Virtual Account"][2]['request'] == "vabifast remarks 3"
 
-        # Row 4 (index 3): kosong di 7, diisi skenario 8 (prima/4), skenario 9 TIDAK overwrite
+        # Row 4 (index 3): kosong di 7, diisi skenario 8 (prima), skenario 9 TIDAK overwrite
         assert result["API Virtual Account"][3] is not None
-        assert "prima/4" in result["API Virtual Account"][3]['request']
-        assert "vabifast/4" not in result["API Virtual Account"][3]['request']
+        assert result["API Virtual Account"][3]['request'] == "prima remarks 4"
+        assert "vabifast remarks 4" not in result["API Virtual Account"][3]['request']
 
     def test_tidak_dites_handling(self):
         """Test handling ketika Hasil Aktual = 'Tidak dites'."""
+        uat_data = {
+            "Balance Services": [
+                self._make_row("1.1", hasil_aktual="Tidak dites", remarks="Catatan dari remarks"),
+            ]
+        }
+
+        result = map_uat_to_lampiran(uat_data)
+
+        assert result["API Balance Inquiry"][0] is not None
+        assert result["API Balance Inquiry"][0]['request'] == ""
+        assert result["API Balance Inquiry"][0]['response'] == ""
+        assert result["API Balance Inquiry"][0]['notes'] == "Catatan dari remarks"
+        # Result mapped: "Tidak dites" -> "N/A"
+        assert result["API Balance Inquiry"][0]['result'] == "N/A"
+
+    def test_tidak_dites_empty_remarks(self):
+        """Test handling ketika Hasil Aktual = 'Tidak dites' dan Remarks kosong."""
         uat_data = {
             "Balance Services": [
                 self._make_row("1.1", hasil_aktual="Tidak dites", remarks=""),
@@ -214,8 +283,6 @@ class TestMapUatToLampiran:
         assert result["API Balance Inquiry"][0]['request'] == ""
         assert result["API Balance Inquiry"][0]['response'] == ""
         assert result["API Balance Inquiry"][0]['notes'] == "Tidak dites"
-        # Result mapped: "Tidak dites" -> "N/A"
-        assert result["API Balance Inquiry"][0]['result'] == "N/A"
 
     def test_berhasil_without_remarks(self):
         """Test handling ketika Berhasil tapi Remarks kosong."""
@@ -229,6 +296,22 @@ class TestMapUatToLampiran:
 
         assert result["API Balance Inquiry"][0] is not None
         assert result["API Balance Inquiry"][0]['request'] == ""
+        assert result["API Balance Inquiry"][0]['response'] == ""
+
+    def test_berhasil_with_remarks(self):
+        """Test handling ketika Berhasil dan Remarks ada isinya."""
+        uat_data = {
+            "Balance Services": [
+                self._make_row("1.1", hasil_aktual="Berhasil", remarks="Full remarks content here"),
+            ]
+        }
+
+        result = map_uat_to_lampiran(uat_data)
+
+        assert result["API Balance Inquiry"][0] is not None
+        # Seluruh Remarks masuk ke Request
+        assert result["API Balance Inquiry"][0]['request'] == "Full remarks content here"
+        # Response kosong
         assert result["API Balance Inquiry"][0]['response'] == ""
 
     def test_empty_uat_data(self):
@@ -245,8 +328,8 @@ class TestMapUatToLampiran:
         """Test bahwa nomor kasus di luar range diabaikan."""
         uat_data = {
             "Balance Services": [
-                self._make_row("1.1", remarks="URL:\nhttps://test.com\n\nResponse:\n{}"),
-                self._make_row("1.99", remarks="URL:\nhttps://test.com/out\n\nResponse:\n{}"),  # Out of range (max 11)
+                self._make_row("1.1", remarks="valid row"),
+                self._make_row("1.99", remarks="out of range"),  # Out of range (max 11)
             ]
         }
 
@@ -260,8 +343,8 @@ class TestMapUatToLampiran:
         """Test mapping untuk SKNBI Transfer (Skenario 6)."""
         uat_data = {
             "SKNBI Transfer": [
-                self._make_row("6.1", remarks="URL:\nhttps://api.test.com/sknbi\n\nHeader:\n{\"auth\":\"x\"}\n\nRequestBody:\n{\"amt\":200}\n\nResponse:\n{\"ok\":true}"),
-                self._make_row("6.5", remarks="URL:\nhttps://api.test.com/sknbi5\n\nResponse:\n{\"ok\":true}"),
+                self._make_row("6.1", remarks="sknbi remarks 1"),
+                self._make_row("6.5", remarks="sknbi remarks 5"),
             ]
         }
 
@@ -269,8 +352,8 @@ class TestMapUatToLampiran:
 
         assert result["API SKNBI Transfer"][0] is not None
         assert result["API SKNBI Transfer"][4] is not None
-        assert "sknbi" in result["API SKNBI Transfer"][0]['request']
-        assert "sknbi5" in result["API SKNBI Transfer"][4]['request']
+        assert result["API SKNBI Transfer"][0]['request'] == "sknbi remarks 1"
+        assert result["API SKNBI Transfer"][4]['request'] == "sknbi remarks 5"
 
     def test_section_initialization(self):
         """Test bahwa semua section diinisialisasi dengan jumlah row yang benar."""
@@ -282,3 +365,26 @@ class TestMapUatToLampiran:
         assert len(result["API RTGS Transfer"]) == 13
         assert len(result["API SKNBI Transfer"]) == 13
         assert len(result["API Virtual Account"]) == 33
+
+    def test_response_always_empty(self):
+        """Test bahwa kolom Response selalu kosong (tidak diisi dari Remarks)."""
+        remarks_with_response = """URL:
+https://api.test.com/endpoint
+
+Response:
+{"responseCode": "200", "responseMessage": "Success"}"""
+
+        uat_data = {
+            "Balance Services": [
+                self._make_row("1.1", remarks=remarks_with_response, hasil_aktual="Berhasil"),
+            ]
+        }
+
+        result = map_uat_to_lampiran(uat_data)
+
+        row = result["API Balance Inquiry"][0]
+        assert row is not None
+        # Response harus kosong - tidak di-extract dari Remarks
+        assert row['response'] == ""
+        # Seluruh Remarks (termasuk bagian Response) masuk ke Request
+        assert row['request'] == remarks_with_response
