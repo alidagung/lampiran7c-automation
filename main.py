@@ -647,13 +647,18 @@ def map_uat_to_lampiran(uat_data):
 # WORD DOCUMENT GENERATOR
 # ============================================================
 
-def create_lampiran_document(lampiran_data, output_path):
+def build_lampiran_document(lampiran_data):
     """
-    Membuat dokumen Word Lampiran 7C dari scratch.
+    Membangun dokumen Word Lampiran 7C dari data hasil mapping dan
+    mengembalikan objek Document (tanpa menyimpan ke disk).
+
+    Fungsi ini dipakai bersama oleh CLI (main.py) maupun aplikasi web (app.py).
 
     Args:
         lampiran_data: Dict hasil dari map_uat_to_lampiran()
-        output_path: Path untuk menyimpan file output
+
+    Returns:
+        docx.Document: dokumen yang siap disimpan.
     """
     doc = Document()
 
@@ -675,9 +680,7 @@ def create_lampiran_document(lampiran_data, output_path):
     if not sections_to_render:
         # Tidak ada satupun layanan yang dites
         doc.add_paragraph("Tidak ada data hasil UAT yang ditemukan pada UAT Script.")
-        doc.save(str(output_path))
-        print(f"  [OK] Dokumen berhasil disimpan: {output_path}")
-        return
+        return doc
 
     # Buat setiap section yang ada datanya
     for section_idx, (section_name, filled_rows) in enumerate(sections_to_render):
@@ -745,9 +748,71 @@ def create_lampiran_document(lampiran_data, output_path):
             row.cells[6].width = Cm(2.0)    # Result
             row.cells[7].width = Cm(2.5)    # Notes
 
-    # Simpan dokumen
+    return doc
+
+
+def create_lampiran_document(lampiran_data, output_path):
+    """
+    Membuat dokumen Word Lampiran 7C dan menyimpannya ke output_path.
+    (Wrapper tipis di atas build_lampiran_document untuk pemakaian CLI.)
+    """
+    doc = build_lampiran_document(lampiran_data)
     doc.save(str(output_path))
     print(f"  [OK] Dokumen berhasil disimpan: {output_path}")
+
+
+# ============================================================
+# API REUSABLE (dipakai aplikasi web)
+# ============================================================
+
+def convert_uat_to_lampiran(source):
+    """
+    Konversi UAT Script (Excel) menjadi dokumen Lampiran 7C.
+
+    Fungsi tingkat tinggi yang menyatukan 3 langkah: baca -> mapping -> bangun
+    dokumen. Cocok dipanggil dari aplikasi web.
+
+    Args:
+        source: path file (str/Path) ATAU objek file-like/bytes berisi .xlsx
+
+    Returns:
+        tuple: (doc, stats)
+            doc   : docx.Document hasil konversi (belum disimpan)
+            stats : dict {section_name: jumlah_baris_terisi} untuk ringkasan
+    """
+    import io
+
+    # openpyxl menerima path maupun file-like object. Jika berupa bytes,
+    # bungkus dengan BytesIO.
+    if isinstance(source, (bytes, bytearray)):
+        source = io.BytesIO(source)
+
+    uat_data = read_uat_script(source)
+    lampiran_data = map_uat_to_lampiran(uat_data)
+
+    stats = {}
+    for section_name, rows in lampiran_data.items():
+        stats[section_name] = sum(1 for r in rows if r is not None)
+
+    doc = build_lampiran_document(lampiran_data)
+    return doc, stats
+
+
+def convert_uat_to_lampiran_bytes(source):
+    """
+    Sama seperti convert_uat_to_lampiran(), tetapi mengembalikan dokumen dalam
+    bentuk bytes (siap dikirim sebagai unduhan di aplikasi web).
+
+    Returns:
+        tuple: (docx_bytes, stats)
+    """
+    import io
+
+    doc, stats = convert_uat_to_lampiran(source)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue(), stats
 
 
 # ============================================================
