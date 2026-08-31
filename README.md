@@ -11,8 +11,49 @@ Dengan script ini, Anda tidak perlu lagi copy-paste manual data URL, Headers, Re
 - Parsing data log (URL, Headers, Request Body, Response) dari kolom Remarks
 - Mendukung 2 format Remarks: format "Mitra HIT" dan "BSS YANG HIT"
 - Membuat dokumen Word Lampiran 7C dengan format tabel yang benar
-- Mapping otomatis 9 skenario UAT ke 6 section Lampiran 7C
-- Handle skenario yang sharing template (Interbank Transfer & Virtual Account)
+- Mapping otomatis skenario UAT ke section Lampiran 7C
+- **Aplikasi web**: cukup unggah file, klik proses, unduh hasilnya (tanpa perlu paham teknis)
+
+---
+
+## 🌐 Cara Cepat: Aplikasi Web (Direkomendasikan)
+
+Cara termudah — tidak perlu menaruh file di folder atau menjalankan perintah rumit.
+Anda cukup mengunggah file lewat halaman web, lalu mengunduh hasilnya.
+
+### Langkah-langkah:
+
+1. **Install Python** (lihat [Langkah 1](#langkah-1-install-python) di bawah jika belum).
+
+2. **Install dependencies** (cukup sekali):
+   ```
+   pip install -r requirements.txt
+   ```
+
+3. **Jalankan aplikasi web:**
+   ```
+   streamlit run app.py
+   ```
+
+4. Browser akan **terbuka otomatis** di alamat `http://localhost:8501`.
+   (Jika tidak terbuka, buka alamat tersebut secara manual di browser.)
+
+5. Di halaman web:
+   - **Unggah** file `UAT Script.xlsx` Anda (klik area unggah atau seret file).
+   - Klik tombol **🚀 Proses & Buat Lampiran 7C**.
+   - Lihat ringkasan hasil, lalu klik **⬇️ Unduh Lampiran 7C (.docx)**.
+
+6. Untuk **menghentikan** aplikasi: kembali ke Command Prompt/Terminal lalu tekan `Ctrl + C`.
+
+> 💡 Aplikasi web memproses file di memori — file yang Anda unggah **tidak** disimpan
+> permanen di komputer, dan hasilnya langsung tersedia untuk diunduh.
+
+---
+
+## 🖥️ Cara Alternatif: Baris Perintah (CLI)
+
+Jika Anda lebih suka cara lama (menaruh file di folder `input/` dan menjalankan
+script), ikuti panduan lengkap di bawah ini mulai dari [Langkah 1](#langkah-1-install-python).
 
 ---
 
@@ -239,12 +280,13 @@ Buka file tersebut dengan Microsoft Word untuk melihat hasilnya.
 
 ```
 lampiran7c-automation/
-├── input/                  # Folder untuk file input (UAT Script.xlsx)
-├── output/                 # Folder untuk file output (hasil Lampiran 7C)
+├── input/                  # Folder untuk file input (UAT Script.xlsx) - dipakai mode CLI
+├── output/                 # Folder untuk file output (hasil Lampiran 7C) - dipakai mode CLI
 ├── tests/                  # Folder unit tests
 │   ├── test_parser.py      # Test untuk parsing Remarks
 │   └── test_mapping.py     # Test untuk mapping skenario
-├── main.py                 # Script utama
+├── app.py                  # Aplikasi web (Streamlit) - upload & unduh via browser
+├── main.py                 # Logika inti + script CLI
 ├── requirements.txt        # Daftar library yang dibutuhkan
 └── README.md               # File panduan ini
 ```

@@ -36,6 +36,11 @@ OUTPUT_FILENAME = "Lampiran 7C - Hasil UAT.docx"
 # Sheet name di file UAT Script
 UAT_SHEET_NAME = "UAT Script"
 
+# Info header dokumen Lampiran 7.C
+NAMA_PENYEDIA_LAYANAN = "Bank Sahabat Sampoerna"
+NAMA_PENGGUNA_LAYANAN = ""
+TANGGAL_PENGUJIAN = ""
+
 # Kolom index di UAT Script (0-based, dengan kolom A kosong)
 # Kolom A (index 0): KOSONG
 # Kolom B (index 1): Kategori Tes
@@ -79,7 +84,8 @@ UAT_TO_LAMPIRAN_MAPPING = [
     ("Balance Services", "1", "API Balance Inquiry", False),
     ("Intrabank Transfer", "2", "Intrabank Transfer", False),
     ("Interbank Transfer", "3", "Interbank Transfer", False),
-    ("Interbank Transfer via BI FAST", "4", "Interbank Transfer", True),
+    # Catatan: "Interbank Transfer via BI FAST" (skenario 4.x) SENGAJA TIDAK
+    # dipindahkan ke Lampiran 7C sesuai keputusan bisnis.
     ("RTGS Transfer", "5", "API RTGS Transfer", False),
     ("SKNBI Transfer", "6", "API SKNBI Transfer", False),
     ("Transfer VA", "7", "API Virtual Account", False),
@@ -265,6 +271,232 @@ def read_uat_script(filepath):
 
 
 # ============================================================
+# REMARKS PARSER
+# ============================================================
+
+import json
+import re
+
+
+# Penanda blok yang dikenali di kolom Remarks. Mendukung 2 format sumber:
+#   Format A (mis. Intrabank): "URL:", "Headers:", "Request Body:", "Response:"
+#   Format B (mis. Balance):   "Request URL:", "Request headers:",
+#                              "Request body:", "Response body:"
+# Setiap entri: (nama_kanonik, regex penanda)
+_BLOCK_MARKERS = [
+    ("url", r"(?:request\s+)?url(?:\s+endpoint)?\s*:"),
+    ("headers", r"(?:request\s+)?head(?:er|ers)(?:\s+request)?\s*:"),
+    ("request_body", r"request\s*body\s*:"),
+    ("response", r"response(?:\s*body)?\s*:"),
+]
+
+# Regex gabungan untuk menemukan SEMUA penanda di mana saja (termasuk yang
+# menempel di tengah baris, contoh: "}Response body:").
+_MARKER_REGEX = re.compile(
+    r"(?im)(" + "|".join(m[1] for m in _BLOCK_MARKERS) + r")"
+)
+
+
+def _classify_marker(marker_text):
+    """Kembalikan nama kanonik blok dari teks penanda yang cocok."""
+    t = marker_text.strip().lower()
+    # Urutan pengecekan penting: 'request body' & 'response body' sebelum yang umum
+    if re.match(r"request\s*body\s*:", t):
+        return "request_body"
+    if re.match(r"response(?:\s*body)?\s*:", t):
+        return "response"
+    if re.match(r"(?:request\s+)?url(?:\s+endpoint)?\s*:", t):
+        return "url"
+    if re.match(r"(?:request\s+)?head(?:er|ers)(?:\s+request)?\s*:", t):
+        return "headers"
+    return None
+
+
+def _parse_remarks_blocks(text):
+    """
+    Pecah isi Remarks menjadi dict blok: {url, headers, request_body, response}.
+
+    Menggunakan posisi tiap penanda (di mana saja dalam teks) sehingga tahan
+    terhadap variasi format, termasuk penanda yang menempel di akhir baris
+    sebelumnya (mis. "}Response body:").
+    """
+    blocks = {}
+    matches = list(_MARKER_REGEX.finditer(text))
+    if not matches:
+        return blocks
+
+    for i, m in enumerate(matches):
+        name = _classify_marker(m.group(0))
+        if name is None:
+            continue
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        content = text[start:end].strip()
+        # Jangan timpa blok yang sudah terisi (ambil kemunculan pertama)
+        if name not in blocks and content:
+            blocks[name] = content
+
+    return blocks
+
+
+def _format_headers(headers_raw):
+    """
+    Format blok Headers dari UAT Script ke format array Lampiran 7C.
+
+    Mendukung 2 bentuk input:
+      Bentuk A (list baris polos):
+        [
+        Content-Type: application/json
+        Authorization: Bearer xxx
+        ]
+      Bentuk B (JSON object, nilai berupa array):
+        {
+          "Authorization": ["Bearer xxx"],
+          "Content-Type": ["application/json"]
+        }
+
+    Output (format Lampiran 7C, di-compress satu baris):
+        ["Content-Type=application/json","Authorization=Bearer xxx"]
+    """
+    pairs = []
+    raw = headers_raw.strip()
+
+    # Coba parse sebagai JSON object dulu (Bentuk B)
+    parsed = None
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        parsed = None
+
+    if isinstance(parsed, dict):
+        for key, val in parsed.items():
+            if isinstance(val, list):
+                val = ", ".join(str(v) for v in val)
+            pairs.append(f'{key}={val}')
+    else:
+        # Bentuk A: parsing per baris
+        for line in raw.split("\n"):
+            s = line.strip().rstrip(",")
+            if not s or s in ("[", "]", "{", "}"):
+                continue
+            if ":" in s:
+                key, val = s.split(":", 1)
+                pairs.append(f'{key.strip().strip(chr(34))}={val.strip().strip(chr(34))}')
+            elif "=" in s:
+                key, val = s.split("=", 1)
+                pairs.append(f'{key.strip()}={val.strip()}')
+            else:
+                pairs.append(s)
+
+    if not pairs:
+        return ""
+
+    # Compress menjadi satu baris: ["Key=Value","Key=Value",...]
+    return "[" + ",".join(f'"{p}"' for p in pairs) + "]"
+
+
+def _pretty_json(raw):
+    """
+    Compress JSON menjadi satu baris tanpa spasi jika bisa di-parse.
+    Jika gagal parse, kembalikan teks asli apa adanya (sudah di-strip).
+    """
+    raw = raw.strip()
+    if not raw:
+        return ""
+    try:
+        obj = json.loads(raw)
+        return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
+    except (ValueError, TypeError):
+        # Bukan JSON valid -> rapikan jadi satu baris (buang newline & spasi ganda)
+        return re.sub(r"\s+", " ", raw).strip()
+
+
+def split_request_response(remarks_text):
+    """
+    Memisahkan DAN memformat isi kolom Remarks menjadi bagian Request dan
+    Response sesuai format Lampiran 7C.
+
+    Format Remarks (sumber, dari UAT Script):
+        URL:
+        <url>
+
+        Headers:
+        [ Key: Value ... ]
+
+        Request Body:
+        { ... }
+
+        Response:
+        { ... }
+
+    Format hasil (Lampiran 7C):
+        Request:
+            URL Endpoint:
+            <url>
+
+            Header Request:
+            [
+              "Key=Value",
+              ...
+            ]
+
+            Request Body:
+            { ...pretty... }
+
+        Response:
+            Response Body:
+            { ... }
+
+    Returns:
+        tuple: (request_content, response_content) keduanya sudah di-strip.
+    """
+    if not remarks_text or remarks_text.strip().lower() == "none":
+        return "", ""
+
+    text = remarks_text.replace("\r\n", "\n").replace("\r", "\n")
+
+    blocks = _parse_remarks_blocks(text)
+
+    url_raw = blocks.get("url", "")
+    headers_raw = blocks.get("headers", "")
+    body_raw = blocks.get("request_body", "")
+    response_raw = blocks.get("response", "")
+
+    # URL kadang diawali HTTP method (contoh: "POST https://..."). Ambil apa
+    # adanya, hanya bersihkan whitespace.
+    url_raw = url_raw.strip()
+
+    # Susun bagian Request
+    request_blocks = []
+    if url_raw:
+        request_blocks.append(f"URL Endpoint:\n{url_raw}")
+    if headers_raw:
+        request_blocks.append(f"Header Request:\n{_format_headers(headers_raw)}")
+    if body_raw:
+        request_blocks.append(f"Request Body:\n{_pretty_json(body_raw)}")
+
+    request_part = "\n\n".join(request_blocks).strip()
+
+    # Susun bagian Response
+    if response_raw:
+        response_part = f"Response Body:\n{_pretty_json(response_raw)}"
+    else:
+        response_part = ""
+
+    # Fallback: jika format tidak dikenali sama sekali, pisahkan sederhana
+    # pada penanda "Response" agar data tidak hilang.
+    if not request_part and not response_part:
+        m = re.search(r"(?i)response(?:\s*body)?\s*:", text)
+        if m:
+            request_part = text[:m.start()].strip()
+            response_part = text[m.end():].strip()
+        else:
+            request_part = text.strip()
+
+    return request_part, response_part
+
+
+# ============================================================
 # MAPPING LOGIC
 # ============================================================
 
@@ -292,20 +524,24 @@ def map_result_value(hasil_aktual):
     """
     Map Hasil Aktual ke Result value di Lampiran 7C.
 
-    - "Berhasil" -> "PASS"
-    - "Tidak dites" -> "N/A"
-    - "Gagal" -> "NOT PASS"
-    - Lainnya -> nilai asli
+    Mengacu pada legend "KET" di UAT Script:
+    - "Berhasil"          -> "PASS"     (sesuai hasil yang diharapkan)
+    - "Gagal"             -> "NOT PASS" (tidak sesuai hasil yang diharapkan)
+    - "Tidak dites"       -> "N/A"      (di luar scope / tidak ada alat pendukung)
+    - "Belum dites"       -> "N/A"      (script belum waktunya dites)
+    - "Siap dites"        -> "N/A"      (menunggu update fixing dari vendor)
+    - "Butuh Konfirmasi"  -> "N/A"      (butuh konfirmasi user/vendor)
+    - Lainnya             -> nilai asli
     """
     if not hasil_aktual:
         return ""
     lower = hasil_aktual.lower().strip()
     if lower == "berhasil":
         return "PASS"
-    elif lower == "tidak dites":
-        return "N/A"
     elif lower == "gagal":
         return "NOT PASS"
+    elif lower in ("tidak dites", "belum dites", "siap dites", "butuh konfirmasi"):
+        return "N/A"
     return hasil_aktual
 
 
@@ -379,18 +615,19 @@ def map_uat_to_lampiran(uat_data):
             service = row_data.get('nama_modul', '') or target_section
 
             # Cek kondisi khusus
-            if hasil_aktual.lower().strip() == "tidak dites":
-                # Tidak dites: Request dan Response kosong, Notes dari Remarks
-                notes = remarks_text if remarks_text and remarks_text.lower() != "none" else "Tidak dites"
+            if hasil_aktual.lower().strip() in ("tidak dites", "belum dites"):
+                # Tidak dites / Belum dites: baris tetap ditampilkan (Result N/A),
+                # tetapi kolom Request, Response, dan Notes dikosongkan.
+                notes = ""
                 request_content = ""
                 response_content = ""
             elif not remarks_text or remarks_text.lower() == "none":
                 # Remarks kosong: Request dan Response kosong
                 notes = ""
             else:
-                # Copy seluruh isi Remarks langsung ke Request (tanpa parsing)
-                request_content = remarks_text
-                response_content = ""
+                # Pisahkan Remarks menjadi Request (URL+Headers+Request Body)
+                # dan Response (isi setelah penanda "Response:")
+                request_content, response_content = split_request_response(remarks_text)
 
             lampiran_data[target_section][row_idx] = {
                 'no': sub_num,
@@ -410,13 +647,18 @@ def map_uat_to_lampiran(uat_data):
 # WORD DOCUMENT GENERATOR
 # ============================================================
 
-def create_lampiran_document(lampiran_data, output_path):
+def build_lampiran_document(lampiran_data):
     """
-    Membuat dokumen Word Lampiran 7C dari scratch.
+    Membangun dokumen Word Lampiran 7C dari data hasil mapping dan
+    mengembalikan objek Document (tanpa menyimpan ke disk).
+
+    Fungsi ini dipakai bersama oleh CLI (main.py) maupun aplikasi web (app.py).
 
     Args:
         lampiran_data: Dict hasil dari map_uat_to_lampiran()
-        output_path: Path untuk menyimpan file output
+
+    Returns:
+        docx.Document: dokumen yang siap disimpan.
     """
     doc = Document()
 
@@ -426,22 +668,44 @@ def create_lampiran_document(lampiran_data, output_path):
     font.name = 'Arial'
     font.size = Pt(9)
 
-    # Buat setiap section
-    for section_idx, (section_name, section_count) in enumerate(LAMPIRAN_SECTIONS):
+    # Hanya render section yang benar-benar punya data hasil tes.
+    # Section yang seluruh barisnya kosong (None) tidak ditampilkan.
+    sections_to_render = []
+    for section_name, section_count in LAMPIRAN_SECTIONS:
+        section_data = lampiran_data.get(section_name, [])
+        filled_rows = [r for r in section_data if r is not None]
+        if filled_rows:
+            sections_to_render.append((section_name, filled_rows))
+
+    if not sections_to_render:
+        # Tidak ada satupun layanan yang dites
+        doc.add_paragraph("Tidak ada data hasil UAT yang ditemukan pada UAT Script.")
+        return doc
+
+    # Buat setiap section yang ada datanya
+    for section_idx, (section_name, filled_rows) in enumerate(sections_to_render):
         # Tambah page break sebelum section (kecuali section pertama)
         if section_idx > 0:
             doc.add_page_break()
 
-        # Header section
-        heading = doc.add_heading(level=2)
-        heading_run = heading.add_run(f"Lampiran 7C - {section_name}")
-        heading_run.font.size = Pt(12)
-        heading_run.font.bold = True
+        # Judul dokumen (format resmi Lampiran 7.C)
+        title1 = doc.add_paragraph()
+        run1 = title1.add_run("Lampiran 7.C")
+        run1.font.size = Pt(12)
+        run1.font.bold = True
 
-        # Info tambahan
-        info_para = doc.add_paragraph()
-        info_para.add_run(f"Nama Layanan API: {section_name}").bold = True
-        info_para.space_after = Pt(6)
+        title2 = doc.add_paragraph()
+        run2 = title2.add_run("Skenario dan Hasil Uji Fungsionalitas")
+        run2.font.size = Pt(11)
+        run2.font.bold = True
+
+        doc.add_paragraph()
+
+        # Info penyedia & layanan
+        doc.add_paragraph(f"Nama Penyedia Layanan : {NAMA_PENYEDIA_LAYANAN}")
+        doc.add_paragraph(f"Nama Pengguna Layanan : {NAMA_PENGGUNA_LAYANAN}")
+        doc.add_paragraph(f"Nama Layanan API      : {section_name}")
+        doc.add_paragraph(f"Tanggal Pengujian     : {TANGGAL_PENGUJIAN}")
 
         # Buat tabel
         # Kolom: No, Service, Scenario, Expected Result, Request, Response, Result, Notes
@@ -461,31 +725,17 @@ def create_lampiran_document(lampiran_data, output_path):
                     run.bold = True
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Data rows
-        section_data = lampiran_data.get(section_name, [])
-        for row_idx in range(section_count):
+        # Data rows - hanya baris yang benar-benar dites (skip baris kosong)
+        for display_no, row_data in enumerate(filled_rows, start=1):
             row_cells = table.add_row().cells
-
-            if row_idx < len(section_data) and section_data[row_idx] is not None:
-                row_data = section_data[row_idx]
-                row_cells[0].text = str(row_data['no'])
-                row_cells[1].text = row_data['service']
-                row_cells[2].text = row_data['scenario']
-                row_cells[3].text = row_data['expected_result']
-                row_cells[4].text = row_data['request']
-                row_cells[5].text = row_data['response']
-                row_cells[6].text = row_data['result']
-                row_cells[7].text = row_data['notes']
-            else:
-                # Row kosong - isi nomor saja
-                row_cells[0].text = str(row_idx + 1)
-                row_cells[1].text = ""
-                row_cells[2].text = ""
-                row_cells[3].text = ""
-                row_cells[4].text = ""
-                row_cells[5].text = ""
-                row_cells[6].text = ""
-                row_cells[7].text = ""
+            row_cells[0].text = str(display_no)
+            row_cells[1].text = row_data['service']
+            row_cells[2].text = row_data['scenario']
+            row_cells[3].text = row_data['expected_result']
+            row_cells[4].text = row_data['request']
+            row_cells[5].text = row_data['response']
+            row_cells[6].text = row_data['result']
+            row_cells[7].text = row_data['notes']
 
         # Set column widths (approximate)
         for row in table.rows:
@@ -498,9 +748,71 @@ def create_lampiran_document(lampiran_data, output_path):
             row.cells[6].width = Cm(2.0)    # Result
             row.cells[7].width = Cm(2.5)    # Notes
 
-    # Simpan dokumen
+    return doc
+
+
+def create_lampiran_document(lampiran_data, output_path):
+    """
+    Membuat dokumen Word Lampiran 7C dan menyimpannya ke output_path.
+    (Wrapper tipis di atas build_lampiran_document untuk pemakaian CLI.)
+    """
+    doc = build_lampiran_document(lampiran_data)
     doc.save(str(output_path))
     print(f"  [OK] Dokumen berhasil disimpan: {output_path}")
+
+
+# ============================================================
+# API REUSABLE (dipakai aplikasi web)
+# ============================================================
+
+def convert_uat_to_lampiran(source):
+    """
+    Konversi UAT Script (Excel) menjadi dokumen Lampiran 7C.
+
+    Fungsi tingkat tinggi yang menyatukan 3 langkah: baca -> mapping -> bangun
+    dokumen. Cocok dipanggil dari aplikasi web.
+
+    Args:
+        source: path file (str/Path) ATAU objek file-like/bytes berisi .xlsx
+
+    Returns:
+        tuple: (doc, stats)
+            doc   : docx.Document hasil konversi (belum disimpan)
+            stats : dict {section_name: jumlah_baris_terisi} untuk ringkasan
+    """
+    import io
+
+    # openpyxl menerima path maupun file-like object. Jika berupa bytes,
+    # bungkus dengan BytesIO.
+    if isinstance(source, (bytes, bytearray)):
+        source = io.BytesIO(source)
+
+    uat_data = read_uat_script(source)
+    lampiran_data = map_uat_to_lampiran(uat_data)
+
+    stats = {}
+    for section_name, rows in lampiran_data.items():
+        stats[section_name] = sum(1 for r in rows if r is not None)
+
+    doc = build_lampiran_document(lampiran_data)
+    return doc, stats
+
+
+def convert_uat_to_lampiran_bytes(source):
+    """
+    Sama seperti convert_uat_to_lampiran(), tetapi mengembalikan dokumen dalam
+    bentuk bytes (siap dikirim sebagai unduhan di aplikasi web).
+
+    Returns:
+        tuple: (docx_bytes, stats)
+    """
+    import io
+
+    doc, stats = convert_uat_to_lampiran(source)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue(), stats
 
 
 # ============================================================
