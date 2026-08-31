@@ -76,15 +76,16 @@ class TestMapUatToLampiran:
         assert result["API Balance Inquiry"][1]['no'] == 2
 
     def test_remarks_copied_directly_to_request(self):
-        """Test bahwa seluruh isi Remarks di-copy langsung ke kolom Request."""
+        """Test bahwa Remarks dipisah & diformat: Request berisi URL/Header/Body,
+        Response berisi bagian setelah penanda Response."""
         remarks_text = """URL:
 https://api.example.com/v1/transfer
 
-Header:
+Headers:
 X-TIMESTAMP: 2025-07-30T14:28:56+07:00
 Authorization: Bearer token123
 
-RequestBody:
+Request Body:
 {"amount": 50000}
 
 Response:
@@ -100,14 +101,21 @@ Response:
 
         row = result["API Balance Inquiry"][0]
         assert row is not None
-        # Seluruh isi Remarks harus ada di Request, apa adanya
-        assert row['request'] == remarks_text
-        # Response harus kosong
-        assert row['response'] == ""
+        # Request memuat URL Endpoint, Header Request, dan Request Body (diformat)
+        assert "URL Endpoint:" in row['request']
+        assert "https://api.example.com/v1/transfer" in row['request']
+        assert "Header Request:" in row['request']
+        assert '"Authorization=Bearer token123"' in row['request']
+        assert "Request Body:" in row['request']
+        # Response body dipindah ke kolom Response, tidak ada di Request
+        assert "Response Body:" in row['response']
+        assert "2001700" in row['response']
+        assert "2001700" not in row['request']
 
-    def test_remarks_not_parsed(self):
-        """Test bahwa Remarks TIDAK di-parse, langsung copy paste."""
-        remarks_text = "- url: https://api.test.com/va\n- headers: {}\n- body: {}\n- response: {\"r\":\"va1\"}"
+    def test_remarks_unknown_format_fallback(self):
+        """Test fallback: jika format Remarks tidak dikenali (tanpa penanda
+        URL/Headers/Request Body/Response standar), data tetap tidak hilang."""
+        remarks_text = "catatan bebas tanpa struktur baku"
 
         uat_data = {
             "Transfer VA": [
@@ -119,14 +127,13 @@ Response:
 
         row = result["API Virtual Account"][0]
         assert row is not None
-        # Seluruh Remarks harus ada di request tanpa diubah
+        # Data mentah tetap dipertahankan di Request agar tidak hilang
         assert row['request'] == remarks_text
-        # Response kosong (tidak di-extract dari Remarks)
         assert row['response'] == ""
 
     def test_basic_mapping_intrabank(self):
-        """Test mapping untuk Intrabank Transfer - Remarks langsung masuk Request."""
-        remarks_text = "URL:\nhttps://api.test.com/intra\n\nHeader:\n{\"auth\":\"x\"}\n\nRequestBody:\n{\"amt\":100}\n\nResponse:\n{\"ok\":true}"
+        """Test mapping untuk Intrabank Transfer - Remarks dipisah & diformat."""
+        remarks_text = "URL:\nhttps://api.test.com/intra\n\nHeaders:\nauth: x\n\nRequest Body:\n{\"amt\":100}\n\nResponse:\n{\"ok\":true}"
         uat_data = {
             "Intrabank Transfer": [
                 self._make_row("2.1", remarks=remarks_text),
@@ -135,11 +142,14 @@ Response:
 
         result = map_uat_to_lampiran(uat_data)
 
-        assert result["Intrabank Transfer"][0] is not None
-        # Remarks langsung di-copy ke request
-        assert result["Intrabank Transfer"][0]['request'] == remarks_text
-        # Response kosong
-        assert result["Intrabank Transfer"][0]['response'] == ""
+        row = result["Intrabank Transfer"][0]
+        assert row is not None
+        # Request memuat URL Endpoint + Request Body, Response terpisah
+        assert "URL Endpoint:" in row['request']
+        assert "https://api.test.com/intra" in row['request']
+        assert "Request Body:" in row['request']
+        assert "Response Body:" in row['response']
+        assert '"ok":true' in row['response'] or '"ok": true' in row['response']
 
     def test_fill_empty_only_interbank(self):
         """
@@ -366,8 +376,9 @@ Response:
         assert len(result["API SKNBI Transfer"]) == 13
         assert len(result["API Virtual Account"]) == 33
 
-    def test_response_always_empty(self):
-        """Test bahwa kolom Response selalu kosong (tidak diisi dari Remarks)."""
+    def test_response_extracted_to_response_column(self):
+        """Test bahwa bagian setelah penanda Response dipindah ke kolom Response,
+        dan tidak lagi ikut di kolom Request."""
         remarks_with_response = """URL:
 https://api.test.com/endpoint
 
@@ -384,7 +395,9 @@ Response:
 
         row = result["API Balance Inquiry"][0]
         assert row is not None
-        # Response harus kosong - tidak di-extract dari Remarks
-        assert row['response'] == ""
-        # Seluruh Remarks (termasuk bagian Response) masuk ke Request
-        assert row['request'] == remarks_with_response
+        # Bagian Response dipindah ke kolom Response
+        assert "Response Body:" in row['response']
+        assert '"responseCode"' in row['response']
+        # URL tetap di Request, tapi isi Response TIDAK bocor ke Request
+        assert "URL Endpoint:" in row['request']
+        assert "Success" not in row['request']
