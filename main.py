@@ -84,7 +84,8 @@ UAT_TO_LAMPIRAN_MAPPING = [
     ("Balance Services", "1", "API Balance Inquiry", False),
     ("Intrabank Transfer", "2", "Intrabank Transfer", False),
     ("Interbank Transfer", "3", "Interbank Transfer", False),
-    ("Interbank Transfer via BI FAST", "4", "Interbank Transfer", True),
+    # Catatan: "Interbank Transfer via BI FAST" (skenario 4.x) SENGAJA TIDAK
+    # dipindahkan ke Lampiran 7C sesuai keputusan bisnis.
     ("RTGS Transfer", "5", "API RTGS Transfer", False),
     ("SKNBI Transfer", "6", "API SKNBI Transfer", False),
     ("Transfer VA", "7", "API Virtual Account", False),
@@ -277,74 +278,118 @@ import json
 import re
 
 
-def _extract_section(lines, marker_names):
+# Penanda blok yang dikenali di kolom Remarks. Mendukung 2 format sumber:
+#   Format A (mis. Intrabank): "URL:", "Headers:", "Request Body:", "Response:"
+#   Format B (mis. Balance):   "Request URL:", "Request headers:",
+#                              "Request body:", "Response body:"
+# Setiap entri: (nama_kanonik, regex penanda)
+_BLOCK_MARKERS = [
+    ("url", r"(?:request\s+)?url(?:\s+endpoint)?\s*:"),
+    ("headers", r"(?:request\s+)?head(?:er|ers)(?:\s+request)?\s*:"),
+    ("request_body", r"request\s*body\s*:"),
+    ("response", r"response(?:\s*body)?\s*:"),
+]
+
+# Regex gabungan untuk menemukan SEMUA penanda di mana saja (termasuk yang
+# menempel di tengah baris, contoh: "}Response body:").
+_MARKER_REGEX = re.compile(
+    r"(?im)(" + "|".join(m[1] for m in _BLOCK_MARKERS) + r")"
+)
+
+
+def _classify_marker(marker_text):
+    """Kembalikan nama kanonik blok dari teks penanda yang cocok."""
+    t = marker_text.strip().lower()
+    # Urutan pengecekan penting: 'request body' & 'response body' sebelum yang umum
+    if re.match(r"request\s*body\s*:", t):
+        return "request_body"
+    if re.match(r"response(?:\s*body)?\s*:", t):
+        return "response"
+    if re.match(r"(?:request\s+)?url(?:\s+endpoint)?\s*:", t):
+        return "url"
+    if re.match(r"(?:request\s+)?head(?:er|ers)(?:\s+request)?\s*:", t):
+        return "headers"
+    return None
+
+
+def _parse_remarks_blocks(text):
     """
-    Ambil isi sebuah blok dari daftar baris Remarks.
+    Pecah isi Remarks menjadi dict blok: {url, headers, request_body, response}.
 
-    Blok dimulai pada baris yang diawali salah satu marker (contoh: "URL:",
-    "Headers:", "Request Body:", "Response:") dan berakhir tepat sebelum
-    marker blok lain berikutnya.
-
-    Args:
-        lines: list of str (isi Remarks yang sudah di-split per baris)
-        marker_names: list nama marker yang menandai awal blok ini
-
-    Returns:
-        str: isi blok (tanpa baris marker), sudah di-strip. "" jika tidak ada.
+    Menggunakan posisi tiap penanda (di mana saja dalam teks) sehingga tahan
+    terhadap variasi format, termasuk penanda yang menempel di akhir baris
+    sebelumnya (mis. "}Response body:").
     """
-    all_markers = ["url", "headers", "header", "request body", "response", "request"]
+    blocks = {}
+    matches = list(_MARKER_REGEX.finditer(text))
+    if not matches:
+        return blocks
 
-    start = None
-    for idx, line in enumerate(lines):
-        stripped = line.strip().lower().rstrip(":").strip()
-        if stripped in [m.lower() for m in marker_names]:
-            start = idx + 1
-            break
-    if start is None:
-        return ""
+    for i, m in enumerate(matches):
+        name = _classify_marker(m.group(0))
+        if name is None:
+            continue
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        content = text[start:end].strip()
+        # Jangan timpa blok yang sudah terisi (ambil kemunculan pertama)
+        if name not in blocks and content:
+            blocks[name] = content
 
-    collected = []
-    for idx in range(start, len(lines)):
-        stripped = lines[idx].strip().lower().rstrip(":").strip()
-        if stripped in all_markers:
-            break
-        collected.append(lines[idx])
-
-    return "\n".join(collected).strip()
+    return blocks
 
 
 def _format_headers(headers_raw):
     """
     Format blok Headers dari UAT Script ke format array Lampiran 7C.
 
-    Input (per baris):
+    Mendukung 2 bentuk input:
+      Bentuk A (list baris polos):
         [
         Content-Type: application/json
         Authorization: Bearer xxx
         ]
+      Bentuk B (JSON object, nilai berupa array):
+        {
+          "Authorization": ["Bearer xxx"],
+          "Content-Type": ["application/json"]
+        }
 
-    Output:
+    Output (format Lampiran 7C):
         [
           "Content-Type=application/json",
           "Authorization=Bearer xxx"
         ]
-
-    Setiap header ditulis "Key=Value" dengan indentasi 2 spasi, dipisahkan
-    koma, item terakhir tanpa koma.
     """
     pairs = []
-    for line in headers_raw.split("\n"):
-        s = line.strip()
-        if not s or s in ("[", "]"):
-            continue
-        if ":" in s:
-            key, val = s.split(":", 1)
-            pairs.append(f'{key.strip()}={val.strip()}')
-        elif "=" in s:
-            key, val = s.split("=", 1)
-            pairs.append(f'{key.strip()}={val.strip()}')
-        else:
-            pairs.append(s)
+    raw = headers_raw.strip()
+
+    # Coba parse sebagai JSON object dulu (Bentuk B)
+    parsed = None
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        parsed = None
+
+    if isinstance(parsed, dict):
+        for key, val in parsed.items():
+            if isinstance(val, list):
+                val = ", ".join(str(v) for v in val)
+            pairs.append(f'{key}={val}')
+    else:
+        # Bentuk A: parsing per baris
+        for line in raw.split("\n"):
+            s = line.strip().rstrip(",")
+            if not s or s in ("[", "]", "{", "}"):
+                continue
+            if ":" in s:
+                key, val = s.split(":", 1)
+                pairs.append(f'{key.strip().strip(chr(34))}={val.strip().strip(chr(34))}')
+            elif "=" in s:
+                key, val = s.split("=", 1)
+                pairs.append(f'{key.strip()}={val.strip()}')
+            else:
+                pairs.append(s)
 
     if not pairs:
         return ""
@@ -415,17 +460,22 @@ def split_request_response(remarks_text):
         return "", ""
 
     text = remarks_text.replace("\r\n", "\n").replace("\r", "\n")
-    lines = text.split("\n")
 
-    url_raw = _extract_section(lines, ["URL"])
-    headers_raw = _extract_section(lines, ["Headers", "Header"])
-    body_raw = _extract_section(lines, ["Request Body", "Request"])
-    response_raw = _extract_section(lines, ["Response"])
+    blocks = _parse_remarks_blocks(text)
+
+    url_raw = blocks.get("url", "")
+    headers_raw = blocks.get("headers", "")
+    body_raw = blocks.get("request_body", "")
+    response_raw = blocks.get("response", "")
+
+    # URL kadang diawali HTTP method (contoh: "POST https://..."). Ambil apa
+    # adanya, hanya bersihkan whitespace.
+    url_raw = url_raw.strip()
 
     # Susun bagian Request
     request_blocks = []
     if url_raw:
-        request_blocks.append(f"URL Endpoint:\n{url_raw.strip()}")
+        request_blocks.append(f"URL Endpoint:\n{url_raw}")
     if headers_raw:
         request_blocks.append(f"Header Request:\n{_format_headers(headers_raw)}")
     if body_raw:
@@ -435,14 +485,14 @@ def split_request_response(remarks_text):
 
     # Susun bagian Response
     if response_raw:
-        response_part = f"Response Body:\n{response_raw.strip()}"
+        response_part = f"Response Body:\n{_pretty_json(response_raw)}"
     else:
         response_part = ""
 
     # Fallback: jika format tidak dikenali sama sekali, pisahkan sederhana
-    # pada penanda "Response:" agar data tidak hilang.
+    # pada penanda "Response" agar data tidak hilang.
     if not request_part and not response_part:
-        m = re.search(r"(?im)^\s*response\s*:", text)
+        m = re.search(r"(?i)response(?:\s*body)?\s*:", text)
         if m:
             request_part = text[:m.start()].strip()
             response_part = text[m.end():].strip()
@@ -480,20 +530,24 @@ def map_result_value(hasil_aktual):
     """
     Map Hasil Aktual ke Result value di Lampiran 7C.
 
-    - "Berhasil" -> "PASS"
-    - "Tidak dites" -> "N/A"
-    - "Gagal" -> "NOT PASS"
-    - Lainnya -> nilai asli
+    Mengacu pada legend "KET" di UAT Script:
+    - "Berhasil"          -> "PASS"     (sesuai hasil yang diharapkan)
+    - "Gagal"             -> "NOT PASS" (tidak sesuai hasil yang diharapkan)
+    - "Tidak dites"       -> "N/A"      (di luar scope / tidak ada alat pendukung)
+    - "Belum dites"       -> "N/A"      (script belum waktunya dites)
+    - "Siap dites"        -> "N/A"      (menunggu update fixing dari vendor)
+    - "Butuh Konfirmasi"  -> "N/A"      (butuh konfirmasi user/vendor)
+    - Lainnya             -> nilai asli
     """
     if not hasil_aktual:
         return ""
     lower = hasil_aktual.lower().strip()
     if lower == "berhasil":
         return "PASS"
-    elif lower == "tidak dites":
-        return "N/A"
     elif lower == "gagal":
         return "NOT PASS"
+    elif lower in ("tidak dites", "belum dites", "siap dites", "butuh konfirmasi"):
+        return "N/A"
     return hasil_aktual
 
 
@@ -567,9 +621,10 @@ def map_uat_to_lampiran(uat_data):
             service = row_data.get('nama_modul', '') or target_section
 
             # Cek kondisi khusus
-            if hasil_aktual.lower().strip() == "tidak dites":
-                # Tidak dites: Request dan Response kosong, Notes dari Remarks
-                notes = remarks_text if remarks_text and remarks_text.lower() != "none" else "Tidak dites"
+            if hasil_aktual.lower().strip() in ("tidak dites", "belum dites"):
+                # Tidak dites / Belum dites: baris tetap ditampilkan (Result N/A),
+                # tetapi kolom Request, Response, dan Notes dikosongkan.
+                notes = ""
                 request_content = ""
                 response_content = ""
             elif not remarks_text or remarks_text.lower() == "none":

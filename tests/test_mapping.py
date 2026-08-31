@@ -151,16 +151,17 @@ Response:
         assert "Response Body:" in row['response']
         assert '"ok":true' in row['response'] or '"ok": true' in row['response']
 
-    def test_fill_empty_only_interbank(self):
+    def test_interbank_bifast_not_mapped(self):
         """
-        Test logika 'fill empty only' untuk Interbank Transfer.
-        Skenario 3 mengisi terlebih dahulu, Skenario 4 hanya mengisi yang kosong.
+        Aturan bisnis: 'Interbank Transfer via BI FAST' (skenario 4.x) TIDAK
+        dipindahkan ke Lampiran 7C. Data BI FAST tidak boleh mengisi baris
+        kosong di section Interbank Transfer.
         """
         uat_data = {
             "Interbank Transfer": [
                 self._make_row("3.1", remarks="interbank remarks 1"),
                 self._make_row("3.3", remarks="interbank remarks 3"),
-                # 3.2 tidak ada datanya
+                # 3.2 sengaja tidak ada datanya
             ],
             "Interbank Transfer via BI FAST": [
                 self._make_row("4.1", remarks="bifast remarks 1"),
@@ -175,14 +176,17 @@ Response:
         assert result["Interbank Transfer"][0] is not None
         assert result["Interbank Transfer"][0]['request'] == "interbank remarks 1"
 
-        # Row 2 (index 1): TIDAK ada di skenario 3, diisi oleh skenario 4
-        assert result["Interbank Transfer"][1] is not None
-        assert result["Interbank Transfer"][1]['request'] == "bifast remarks 2"
+        # Row 2 (index 1): 3.2 tidak ada -> TETAP KOSONG (BI FAST tidak mengisi)
+        assert result["Interbank Transfer"][1] is None
 
-        # Row 3 (index 2): sudah diisi skenario 3 -> skenario 4 TIDAK overwrite
+        # Row 3 (index 2): diisi skenario 3
         assert result["Interbank Transfer"][2] is not None
         assert result["Interbank Transfer"][2]['request'] == "interbank remarks 3"
-        assert "bifast remarks 3" not in result["Interbank Transfer"][2]['request']
+
+        # Tidak ada satupun data BI FAST yang bocor ke Interbank Transfer
+        for row in result["Interbank Transfer"]:
+            if row is not None:
+                assert "bifast" not in row['request']
 
     def test_fill_empty_only_virtual_account(self):
         """
@@ -263,7 +267,8 @@ Response:
         assert "vabifast remarks 4" not in result["API Virtual Account"][3]['request']
 
     def test_tidak_dites_handling(self):
-        """Test handling ketika Hasil Aktual = 'Tidak dites'."""
+        """Test handling ketika Hasil Aktual = 'Tidak dites'.
+        Baris tetap ditampilkan (Result=N/A), tapi Notes dikosongkan."""
         uat_data = {
             "Balance Services": [
                 self._make_row("1.1", hasil_aktual="Tidak dites", remarks="Catatan dari remarks"),
@@ -275,12 +280,13 @@ Response:
         assert result["API Balance Inquiry"][0] is not None
         assert result["API Balance Inquiry"][0]['request'] == ""
         assert result["API Balance Inquiry"][0]['response'] == ""
-        assert result["API Balance Inquiry"][0]['notes'] == "Catatan dari remarks"
+        assert result["API Balance Inquiry"][0]['notes'] == ""
         # Result mapped: "Tidak dites" -> "N/A"
         assert result["API Balance Inquiry"][0]['result'] == "N/A"
 
     def test_tidak_dites_empty_remarks(self):
-        """Test handling ketika Hasil Aktual = 'Tidak dites' dan Remarks kosong."""
+        """Test handling ketika Hasil Aktual = 'Tidak dites' dan Remarks kosong.
+        Notes tetap dikosongkan."""
         uat_data = {
             "Balance Services": [
                 self._make_row("1.1", hasil_aktual="Tidak dites", remarks=""),
@@ -292,7 +298,26 @@ Response:
         assert result["API Balance Inquiry"][0] is not None
         assert result["API Balance Inquiry"][0]['request'] == ""
         assert result["API Balance Inquiry"][0]['response'] == ""
-        assert result["API Balance Inquiry"][0]['notes'] == "Tidak dites"
+        assert result["API Balance Inquiry"][0]['notes'] == ""
+
+    def test_belum_dites_handling(self):
+        """Test handling ketika Hasil Aktual = 'Belum dites'.
+        Sama seperti 'Tidak dites': ditampilkan dengan Result=N/A dan
+        kolom Request/Response/Notes kosong."""
+        uat_data = {
+            "Balance Services": [
+                self._make_row("1.1", hasil_aktual="Belum dites", remarks="apapun isinya"),
+            ]
+        }
+
+        result = map_uat_to_lampiran(uat_data)
+
+        row = result["API Balance Inquiry"][0]
+        assert row is not None
+        assert row['request'] == ""
+        assert row['response'] == ""
+        assert row['notes'] == ""
+        assert row['result'] == "N/A"
 
     def test_berhasil_without_remarks(self):
         """Test handling ketika Berhasil tapi Remarks kosong."""
