@@ -80,15 +80,17 @@ process_clicked = st.button(
 if "result_bytes" not in st.session_state:
     st.session_state.result_bytes = None
     st.session_state.result_stats = None
+    st.session_state.result_warnings = None
 
 if process_clicked and uploaded_file is not None:
     try:
         with st.spinner("Memproses file, mohon tunggu..."):
             file_bytes = uploaded_file.getvalue()
-            docx_bytes, stats = convert_uat_to_lampiran_bytes(file_bytes)
+            docx_bytes, stats, warnings = convert_uat_to_lampiran_bytes(file_bytes)
 
         st.session_state.result_bytes = docx_bytes
         st.session_state.result_stats = stats
+        st.session_state.result_warnings = warnings
 
         total = sum(stats.values())
         if total == 0:
@@ -102,12 +104,31 @@ if process_clicked and uploaded_file is not None:
     except Exception as e:  # noqa: BLE001 - tampilkan pesan error ramah pengguna
         st.session_state.result_bytes = None
         st.session_state.result_stats = None
+        st.session_state.result_warnings = None
         st.error(
             "Gagal memproses file. Pastikan file yang diunggah adalah "
             "UAT Script (.xlsx) dengan format yang benar."
         )
         with st.expander("Detail teknis (untuk troubleshooting)"):
             st.code(str(e))
+
+
+# ============================================================
+# PANEL PERINGATAN (DATA ABNORMAL)
+# ============================================================
+
+if st.session_state.get("result_warnings"):
+    _warns = st.session_state.result_warnings
+    st.warning(
+        f"⚠️ Ditemukan **{len(_warns)} hal yang perlu dicek** pada data. "
+        "Data TIDAK diubah — parameter & value tetap apa adanya. "
+        "Berikut baris yang sebaiknya diperiksa manual:"
+    )
+    with st.expander(f"Lihat {len(_warns)} peringatan", expanded=True):
+        for _w in _warns:
+            st.markdown(f"- {_w}")
+elif st.session_state.get("result_stats") is not None:
+    st.info("✅ Tidak ada data abnormal terdeteksi. Parameter & value aman (tidak diubah).")
 
 
 # ============================================================

@@ -602,11 +602,80 @@ def map_result_value(hasil_aktual):
     return hasil_aktual
 
 
-def map_uat_to_lampiran(uat_data):
+def _is_valid_json(raw):
+    """True jika teks bisa di-parse sebagai JSON."""
+    raw = (raw or "").strip()
+    if not raw:
+        return False
+    try:
+        json.loads(raw)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def detect_anomalies(row_data):
+    """
+    Deteksi kondisi ABNORMAL pada satu baris UAT agar bisa ditampilkan sebagai
+    peringatan (tidak mengubah data apa pun - hanya memberi tahu).
+
+    Kondisi yang dideteksi (khusus baris dengan Hasil Aktual = "Berhasil"):
+      1. Remarks kosong padahal hasil Berhasil
+      2. Ada bagian log yang hilang (URL / Header / Request Body / Response)
+      3. Request Body atau Response Body bukan JSON valid
+
+    Args:
+        row_data: dict baris UAT (punya 'nomor_kasus_tes', 'hasil_aktual', 'remarks')
+
+    Returns:
+        list[str]: daftar pesan peringatan (kosong jika tidak ada anomali)
+    """
+    warnings = []
+    kasus = row_data.get('nomor_kasus_tes', '?')
+    hasil = str(row_data.get('hasil_aktual', '')).strip().lower()
+    remarks = row_data.get('remarks', '') or ""
+
+    # Hanya periksa baris yang seharusnya punya log (Berhasil)
+    if hasil != "berhasil":
+        return warnings
+
+    if not remarks.strip() or remarks.strip().lower() == "none":
+        warnings.append(f"Kasus {kasus}: hasil 'Berhasil' tetapi kolom Remarks kosong.")
+        return warnings
+
+    text = remarks.replace("\r\n", "\n").replace("\r", "\n")
+    blocks = _parse_remarks_blocks(text)
+
+    # Bagian yang hilang
+    if not blocks.get("url", "").strip():
+        warnings.append(f"Kasus {kasus}: bagian URL tidak ditemukan pada Remarks.")
+    if not blocks.get("headers", "").strip():
+        warnings.append(f"Kasus {kasus}: bagian Header tidak ditemukan pada Remarks.")
+    if not blocks.get("request_body", "").strip():
+        warnings.append(f"Kasus {kasus}: bagian Request Body tidak ditemukan pada Remarks.")
+    if not blocks.get("response", "").strip():
+        warnings.append(f"Kasus {kasus}: bagian Response tidak ditemukan pada Remarks.")
+
+    # JSON tidak valid (hanya cek jika bagiannya ada)
+    body_raw = blocks.get("request_body", "")
+    if body_raw.strip() and not _is_valid_json(body_raw):
+        warnings.append(f"Kasus {kasus}: Request Body bukan JSON valid - ditampilkan apa adanya, mohon cek manual.")
+    resp_raw = blocks.get("response", "")
+    if resp_raw.strip() and not _is_valid_json(resp_raw):
+        warnings.append(f"Kasus {kasus}: Response Body bukan JSON valid - ditampilkan apa adanya, mohon cek manual.")
+
+    return warnings
+
+
+def map_uat_to_lampiran(uat_data, collect_warnings=False):
     """
     Map data dari UAT Script ke struktur Lampiran 7C.
 
     Mengimplementasikan logika "fill empty only" untuk section yang di-share.
+
+    Args:
+        uat_data: Dict hasil dari read_uat_script()
+        collect_warnings: jika True, kembalikan tuple (lampiran_data, warnings)
 
     Args:
         uat_data: Dict hasil dari read_uat_script()
@@ -632,6 +701,8 @@ def map_uat_to_lampiran(uat_data):
     lampiran_data = {}
     for section_name, count in LAMPIRAN_SECTIONS:
         lampiran_data[section_name] = [None] * count
+
+    warnings = []
 
     # Proses mapping berdasarkan urutan prioritas
     for uat_section, _, target_section, fill_empty_only in UAT_TO_LAMPIRAN_MAPPING:
@@ -686,6 +757,9 @@ def map_uat_to_lampiran(uat_data):
                 # dan Response (isi setelah penanda "Response:")
                 request_content, response_content = split_request_response(remarks_text)
 
+            # Kumpulkan peringatan anomali (tidak mengubah data)
+            warnings.extend(detect_anomalies(row_data))
+
             lampiran_data[target_section][row_idx] = {
                 'no': sub_num,
                 'service': service,
@@ -697,6 +771,8 @@ def map_uat_to_lampiran(uat_data):
                 'notes': notes,
             }
 
+    if collect_warnings:
+        return lampiran_data, warnings
     return lampiran_data
 
 
@@ -996,9 +1072,10 @@ def convert_uat_to_lampiran(source):
         source: path file (str/Path) ATAU objek file-like/bytes berisi .xlsx
 
     Returns:
-        tuple: (doc, stats)
-            doc   : docx.Document hasil konversi (belum disimpan)
-            stats : dict {section_name: jumlah_baris_terisi} untuk ringkasan
+        tuple: (doc, stats, warnings)
+            doc      : docx.Document hasil konversi (belum disimpan)
+            stats    : dict {section_name: jumlah_baris_terisi} untuk ringkasan
+            warnings : list[str] daftar peringatan anomali (bisa kosong)
     """
     import io
 
@@ -1008,14 +1085,14 @@ def convert_uat_to_lampiran(source):
         source = io.BytesIO(source)
 
     uat_data = read_uat_script(source)
-    lampiran_data = map_uat_to_lampiran(uat_data)
+    lampiran_data, warnings = map_uat_to_lampiran(uat_data, collect_warnings=True)
 
     stats = {}
     for section_name, rows in lampiran_data.items():
         stats[section_name] = sum(1 for r in rows if r is not None)
 
     doc = build_lampiran_document(lampiran_data)
-    return doc, stats
+    return doc, stats, warnings
 
 
 def convert_uat_to_lampiran_bytes(source):
@@ -1024,15 +1101,15 @@ def convert_uat_to_lampiran_bytes(source):
     bentuk bytes (siap dikirim sebagai unduhan di aplikasi web).
 
     Returns:
-        tuple: (docx_bytes, stats)
+        tuple: (docx_bytes, stats, warnings)
     """
     import io
 
-    doc, stats = convert_uat_to_lampiran(source)
+    doc, stats, warnings = convert_uat_to_lampiran(source)
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
-    return buffer.getvalue(), stats
+    return buffer.getvalue(), stats, warnings
 
 
 # ============================================================
