@@ -36,14 +36,9 @@ NA_FILL_COLOR = "FFFF00"
 
 # Lebar tiap kolom dalam TWIPS (1/20 poin), urut: No, Service, Scenario,
 # Expected Result, Request, Response, Result, Notes.
-# Proporsi mengikuti contoh Lampiran 7C, diskalakan agar lebar EFEKTIF tabel
-# (grid + margin sel) = ~18.46 cm, yaitu area isi halaman A4 PORTRAIT dengan
-# margin narrow (1.27 cm kiri-kanan). Sudah memperhitungkan cell margin.
-COLUMN_WIDTHS_TWIPS = [446, 904, 1264, 1084, 3077, 1259, 542, 1090]
-
-# Margin dalam sel (kiri & kanan) dalam twips. Dikecilkan dari default (108)
-# agar tabel tidak melebihi lebar halaman.
-CELL_MARGIN_TWIPS = 50
+# Lebar kolom PERSIS seperti contoh Lampiran 7C (total 15168 twips ~26.7 cm),
+# cocok untuk halaman LANDSCAPE.
+COLUMN_WIDTHS_TWIPS = [700, 1418, 1984, 1701, 4829, 1975, 851, 1710]
 
 # Kolom yang isinya di-rata-tengah (selain itu rata kiri).
 # Indeks: 0=No, 1=Service, 2=Scenario, 3=Expected Result, 6=Result
@@ -676,16 +671,16 @@ def map_uat_to_lampiran(uat_data):
 
 def _set_page(section):
     """
-    Set halaman A4 PORTRAIT dengan margin "Narrow" (1.27 cm di semua sisi).
+    Set halaman LANDSCAPE dengan ukuran & margin sesuai contoh Lampiran 7C
+    (Letter landscape: 27.94 x 21.59 cm).
     """
     from docx.enum.section import WD_ORIENT
 
-    # A4 portrait: lebar 21 cm x tinggi 29.7 cm
-    section.orientation = WD_ORIENT.PORTRAIT
-    section.page_width = Cm(21.0)
-    section.page_height = Cm(29.7)
-    # Margin "Narrow" (seperti preset Narrow di Word): 1.27 cm di semua sisi
-    section.left_margin = Cm(1.27)
+    section.orientation = WD_ORIENT.LANDSCAPE
+    section.page_width = Cm(27.94)
+    section.page_height = Cm(21.59)
+    # Margin sesuai contoh
+    section.left_margin = Cm(0.9)
     section.right_margin = Cm(1.27)
     section.top_margin = Cm(1.27)
     section.bottom_margin = Cm(1.27)
@@ -733,20 +728,6 @@ def _set_table_fixed_layout(table, col_widths_twips):
         grid.append(gc)
     # tblGrid harus diletakkan tepat setelah tblPr
     tblPr.addnext(grid)
-
-    # 4. Kecilkan margin dalam sel (kiri/kanan) agar tabel tidak melebar
-    old_mar = tblPr.find(qn("w:tblCellMar"))
-    if old_mar is not None:
-        tblPr.remove(old_mar)
-    cell_mar = OxmlElement("w:tblCellMar")
-    for side in ("top", "left", "bottom", "right"):
-        el = OxmlElement(f"w:{side}")
-        # top/bottom biarkan kecil juga; left/right pakai CELL_MARGIN_TWIPS
-        val = CELL_MARGIN_TWIPS if side in ("left", "right") else 0
-        el.set(qn("w:w"), str(val))
-        el.set(qn("w:type"), "dxa")
-        cell_mar.append(el)
-    tblPr.append(cell_mar)
 
 
 def _set_cell_background(cell, hex_color):
