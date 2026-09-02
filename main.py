@@ -36,10 +36,14 @@ NA_FILL_COLOR = "FFFF00"
 
 # Lebar tiap kolom dalam TWIPS (1/20 poin), urut: No, Service, Scenario,
 # Expected Result, Request, Response, Result, Notes.
-# Proporsi mengikuti contoh Lampiran 7C, tetapi diskalakan agar total
-# = 10466 twips (~18.46 cm), yaitu lebar area isi halaman A4 PORTRAIT
-# dengan margin narrow (1.27 cm kiri-kanan). Jadi tabel muat pas.
-COLUMN_WIDTHS_TWIPS = [483, 978, 1369, 1174, 3332, 1363, 587, 1180]
+# Proporsi mengikuti contoh Lampiran 7C, diskalakan agar lebar EFEKTIF tabel
+# (grid + margin sel) = ~18.46 cm, yaitu area isi halaman A4 PORTRAIT dengan
+# margin narrow (1.27 cm kiri-kanan). Sudah memperhitungkan cell margin.
+COLUMN_WIDTHS_TWIPS = [446, 904, 1264, 1084, 3077, 1259, 542, 1090]
+
+# Margin dalam sel (kiri & kanan) dalam twips. Dikecilkan dari default (108)
+# agar tabel tidak melebihi lebar halaman.
+CELL_MARGIN_TWIPS = 50
 
 # Kolom yang isinya di-rata-tengah (selain itu rata kiri).
 # Indeks: 0=No, 6=Result
@@ -729,6 +733,20 @@ def _set_table_fixed_layout(table, col_widths_twips):
         grid.append(gc)
     # tblGrid harus diletakkan tepat setelah tblPr
     tblPr.addnext(grid)
+
+    # 4. Kecilkan margin dalam sel (kiri/kanan) agar tabel tidak melebar
+    old_mar = tblPr.find(qn("w:tblCellMar"))
+    if old_mar is not None:
+        tblPr.remove(old_mar)
+    cell_mar = OxmlElement("w:tblCellMar")
+    for side in ("top", "left", "bottom", "right"):
+        el = OxmlElement(f"w:{side}")
+        # top/bottom biarkan kecil juga; left/right pakai CELL_MARGIN_TWIPS
+        val = CELL_MARGIN_TWIPS if side in ("left", "right") else 0
+        el.set(qn("w:w"), str(val))
+        el.set(qn("w:type"), "dxa")
+        cell_mar.append(el)
+    tblPr.append(cell_mar)
 
 
 def _set_cell_background(cell, hex_color):
