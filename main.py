@@ -36,9 +36,10 @@ NA_FILL_COLOR = "FFFF00"
 
 # Lebar tiap kolom dalam TWIPS (1/20 poin), urut: No, Service, Scenario,
 # Expected Result, Request, Response, Result, Notes.
-# Nilai diambil dari tblGrid contoh Lampiran 7C. Total = 15168 twips (~26.7 cm)
-# sehingga tabel muat di halaman LANDSCAPE.
-COLUMN_WIDTHS_TWIPS = [700, 1418, 1984, 1701, 4829, 1975, 851, 1710]
+# Proporsi mengikuti contoh Lampiran 7C, tetapi diskalakan agar total
+# = 10466 twips (~18.46 cm), yaitu lebar area isi halaman A4 PORTRAIT
+# dengan margin narrow (1.27 cm kiri-kanan). Jadi tabel muat pas.
+COLUMN_WIDTHS_TWIPS = [483, 978, 1369, 1174, 3332, 1363, 587, 1180]
 
 # Kolom yang isinya di-rata-tengah (selain itu rata kiri).
 # Indeks: 0=No, 6=Result
