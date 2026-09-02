@@ -669,19 +669,16 @@ def map_uat_to_lampiran(uat_data):
 # WORD DOCUMENT GENERATOR
 # ============================================================
 
-def _set_landscape(section):
+def _set_page(section):
     """
-    Ubah orientasi sebuah section menjadi LANDSCAPE (A4) dengan margin kecil,
-    agar tabel yang lebar (8 kolom) muat penuh.
+    Set halaman A4 PORTRAIT dengan margin "Narrow" (1.27 cm di semua sisi).
     """
     from docx.enum.section import WD_ORIENT
 
-    # A4 landscape: lebar 29.7 cm x tinggi 21 cm
-    new_width = Cm(29.7)
-    new_height = Cm(21.0)
-    section.orientation = WD_ORIENT.LANDSCAPE
-    section.page_width = new_width
-    section.page_height = new_height
+    # A4 portrait: lebar 21 cm x tinggi 29.7 cm
+    section.orientation = WD_ORIENT.PORTRAIT
+    section.page_width = Cm(21.0)
+    section.page_height = Cm(29.7)
     # Margin "Narrow" (seperti preset Narrow di Word): 1.27 cm di semua sisi
     section.left_margin = Cm(1.27)
     section.right_margin = Cm(1.27)
@@ -767,8 +764,8 @@ def build_lampiran_document(lampiran_data):
     """
     doc = Document()
 
-    # Halaman landscape agar tabel 8 kolom yang lebar bisa muat
-    _set_landscape(doc.sections[0])
+    # Halaman A4 portrait dengan margin narrow
+    _set_page(doc.sections[0])
 
     # Set default font
     style = doc.styles['Normal']
@@ -823,7 +820,7 @@ def build_lampiran_document(lampiran_data):
             pf = p.paragraph_format
             pf.space_before = Pt(0)
             pf.space_after = Pt(0)
-            pf.line_spacing = 1.0
+            pf.line_spacing = 1.5
 
         doc.add_paragraph()
 
