@@ -46,8 +46,8 @@ COLUMN_WIDTHS_TWIPS = [446, 904, 1264, 1084, 3077, 1259, 542, 1090]
 CELL_MARGIN_TWIPS = 50
 
 # Kolom yang isinya di-rata-tengah (selain itu rata kiri).
-# Indeks: 0=No, 6=Result
-CENTER_ALIGNED_COLUMNS = {0, 6}
+# Indeks: 0=No, 1=Service, 2=Scenario, 3=Expected Result, 6=Result
+CENTER_ALIGNED_COLUMNS = {0, 1, 2, 3, 6}
 
 
 # ============================================================
@@ -848,6 +848,8 @@ def build_lampiran_document(lampiran_data):
         table = doc.add_table(rows=1, cols=8)
         table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        # Matikan auto-fit (Word: "Fixed column width")
+        table.autofit = False
         # Kunci lebar kolom (fixed layout) agar teks tidak pecah vertikal
         _set_table_fixed_layout(table, COLUMN_WIDTHS_TWIPS)
 
