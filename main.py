@@ -17,10 +17,27 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from docx import Document
-from docx.shared import Inches, Pt, Cm
+from docx.shared import Inches, Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+
+
+# ============================================================
+# STYLING TABEL (disesuaikan dengan contoh Lampiran 7C)
+# ============================================================
+
+# Warna latar header tabel (oranye) - hex tanpa tanda pagar
+HEADER_FILL_COLOR = "ED7D31"
+
+# Lebar tiap kolom (cm), urut: No, Service, Scenario, Expected Result,
+# Request, Response, Result, Notes
+COLUMN_WIDTHS_CM = [1.23, 2.50, 3.50, 3.00, 8.52, 3.48, 1.50, 3.02]
+
+# Kolom yang isinya di-rata-tengah (selain itu rata kiri).
+# Indeks: 0=No, 6=Result
+CENTER_ALIGNED_COLUMNS = {0, 6}
 
 
 # ============================================================
@@ -647,6 +664,25 @@ def map_uat_to_lampiran(uat_data):
 # WORD DOCUMENT GENERATOR
 # ============================================================
 
+def _set_cell_background(cell, hex_color):
+    """
+    Memberi warna latar (shading) pada sebuah sel tabel.
+
+    python-docx tidak menyediakan API langsung untuk shading sel, jadi kita
+    menyisipkan elemen <w:shd> ke properti sel (tcPr) secara manual.
+
+    Args:
+        cell: objek sel tabel (docx table cell)
+        hex_color: warna hex tanpa '#', contoh "ED7D31"
+    """
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), hex_color)
+    tcPr.append(shd)
+
+
 def build_lampiran_document(lampiran_data):
     """
     Membangun dokumen Word Lampiran 7C dari data hasil mapping dan
@@ -690,11 +726,13 @@ def build_lampiran_document(lampiran_data):
 
         # Judul dokumen (format resmi Lampiran 7.C)
         title1 = doc.add_paragraph()
+        title1.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run1 = title1.add_run("Lampiran 7.C")
         run1.font.size = Pt(12)
         run1.font.bold = True
 
         title2 = doc.add_paragraph()
+        title2.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run2 = title2.add_run("Skenario dan Hasil Uji Fungsionalitas")
         run2.font.size = Pt(11)
         run2.font.bold = True
@@ -713,40 +751,48 @@ def build_lampiran_document(lampiran_data):
         table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-        # Header row
+        # Header row - latar oranye, teks bold, rata tengah
         header_cells = table.rows[0].cells
         headers = ['No', 'Service', 'Scenario', 'Expected Result',
                    'Request', 'Response', 'Result', 'Notes']
         for i, header_text in enumerate(headers):
-            header_cells[i].text = header_text
-            # Bold header
-            for paragraph in header_cells[i].paragraphs:
-                for run in paragraph.runs:
-                    run.bold = True
+            cell = header_cells[i]
+            cell.text = header_text
+            _set_cell_background(cell, HEADER_FILL_COLOR)
+            cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            for paragraph in cell.paragraphs:
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in paragraph.runs:
+                    run.font.bold = True
 
         # Data rows - hanya baris yang benar-benar dites (skip baris kosong)
         for display_no, row_data in enumerate(filled_rows, start=1):
             row_cells = table.add_row().cells
-            row_cells[0].text = str(display_no)
-            row_cells[1].text = row_data['service']
-            row_cells[2].text = row_data['scenario']
-            row_cells[3].text = row_data['expected_result']
-            row_cells[4].text = row_data['request']
-            row_cells[5].text = row_data['response']
-            row_cells[6].text = row_data['result']
-            row_cells[7].text = row_data['notes']
+            values = [
+                str(display_no),
+                row_data['service'],
+                row_data['scenario'],
+                row_data['expected_result'],
+                row_data['request'],
+                row_data['response'],
+                row_data['result'],
+                row_data['notes'],
+            ]
+            for ci, val in enumerate(values):
+                cell = row_cells[ci]
+                cell.text = val
+                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                # Kolom tertentu rata tengah, sisanya rata kiri
+                align = (WD_ALIGN_PARAGRAPH.CENTER
+                         if ci in CENTER_ALIGNED_COLUMNS
+                         else WD_ALIGN_PARAGRAPH.LEFT)
+                for paragraph in cell.paragraphs:
+                    paragraph.alignment = align
 
-        # Set column widths (approximate)
+        # Set lebar kolom sesuai contoh Lampiran 7C
         for row in table.rows:
-            row.cells[0].width = Cm(1.0)    # No
-            row.cells[1].width = Cm(2.5)    # Service
-            row.cells[2].width = Cm(3.0)    # Scenario
-            row.cells[3].width = Cm(2.5)    # Expected Result
-            row.cells[4].width = Cm(5.0)    # Request
-            row.cells[5].width = Cm(5.0)    # Response
-            row.cells[6].width = Cm(2.0)    # Result
-            row.cells[7].width = Cm(2.5)    # Notes
+            for ci, width_cm in enumerate(COLUMN_WIDTHS_CM):
+                row.cells[ci].width = Cm(width_cm)
 
     return doc
 
