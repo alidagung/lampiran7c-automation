@@ -377,8 +377,11 @@ def _format_headers(headers_raw):
           "Content-Type": ["application/json"]
         }
 
-    Output (format Lampiran 7C, di-compress satu baris):
-        ["Content-Type=application/json","Authorization=Bearer xxx"]
+    Output (format Lampiran 7C, beautify - satu header per baris):
+        [
+          "Content-Type=application/json",
+          "Authorization=Bearer xxx"
+        ]
     """
     pairs = []
     raw = headers_raw.strip()
@@ -413,24 +416,34 @@ def _format_headers(headers_raw):
     if not pairs:
         return ""
 
-    # Compress menjadi satu baris: ["Key=Value","Key=Value",...]
-    return "[" + ",".join(f'"{p}"' for p in pairs) + "]"
+    # Beautify: satu header per baris, indentasi 2 spasi, dipisah koma.
+    #   [
+    #     "Key=Value",
+    #     "Key=Value"
+    #   ]
+    out = ["["]
+    for i, p in enumerate(pairs):
+        comma = "," if i < len(pairs) - 1 else ""
+        out.append(f'  "{p}"{comma}')
+    out.append("]")
+    return "\n".join(out)
 
 
 def _pretty_json(raw):
     """
-    Compress JSON menjadi satu baris tanpa spasi jika bisa di-parse.
-    Jika gagal parse, kembalikan teks asli apa adanya (sudah di-strip).
+    Pretty-print (beautify) JSON dengan indentasi 2 spasi jika bisa di-parse,
+    agar mudah dibaca pada laporan. Jika gagal parse, kembalikan teks asli
+    apa adanya (sudah di-strip).
     """
     raw = raw.strip()
     if not raw:
         return ""
     try:
         obj = json.loads(raw)
-        return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
+        return json.dumps(obj, indent=2, ensure_ascii=False)
     except (ValueError, TypeError):
-        # Bukan JSON valid -> rapikan jadi satu baris (buang newline & spasi ganda)
-        return re.sub(r"\s+", " ", raw).strip()
+        # Bukan JSON valid -> kembalikan apa adanya
+        return raw
 
 
 def split_request_response(remarks_text):
