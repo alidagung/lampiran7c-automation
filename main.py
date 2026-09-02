@@ -31,6 +31,9 @@ from docx.oxml import OxmlElement
 # Warna latar header tabel (oranye) - hex tanpa tanda pagar
 HEADER_FILL_COLOR = "ED7D31"
 
+# Warna blok (shading) untuk baris yang Tidak dites / Belum dites (N/A) - kuning
+NA_FILL_COLOR = "FFFF00"
+
 # Lebar tiap kolom dalam TWIPS (1/20 poin), urut: No, Service, Scenario,
 # Expected Result, Request, Response, Result, Notes.
 # Nilai diambil dari tblGrid contoh Lampiran 7C. Total = 15168 twips (~26.7 cm)
@@ -679,11 +682,11 @@ def _set_landscape(section):
     section.orientation = WD_ORIENT.LANDSCAPE
     section.page_width = new_width
     section.page_height = new_height
-    # Margin kiri/kanan kecil supaya area isi lebar
-    section.left_margin = Cm(0.9)
+    # Margin "Narrow" (seperti preset Narrow di Word): 1.27 cm di semua sisi
+    section.left_margin = Cm(1.27)
     section.right_margin = Cm(1.27)
-    section.top_margin = Cm(1.5)
-    section.bottom_margin = Cm(1.5)
+    section.top_margin = Cm(1.27)
+    section.bottom_margin = Cm(1.27)
 
 
 def _set_table_fixed_layout(table, col_widths_twips):
@@ -808,11 +811,21 @@ def build_lampiran_document(lampiran_data):
 
         doc.add_paragraph()
 
-        # Info penyedia & layanan
-        doc.add_paragraph(f"Nama Penyedia Layanan : {NAMA_PENYEDIA_LAYANAN}")
-        doc.add_paragraph(f"Nama Pengguna Layanan : {NAMA_PENGGUNA_LAYANAN}")
-        doc.add_paragraph(f"Nama Layanan API      : {section_name}")
-        doc.add_paragraph(f"Tanggal Pengujian     : {TANGGAL_PENGUJIAN}")
+        # Info penyedia & layanan - paragraf rapat (single line, spacing 0pt)
+        info_lines = [
+            f"Nama Penyedia Layanan : {NAMA_PENYEDIA_LAYANAN}",
+            f"Nama Pengguna Layanan : {NAMA_PENGGUNA_LAYANAN}",
+            f"Nama Layanan API      : {section_name}",
+            f"Tanggal Pengujian     : {TANGGAL_PENGUJIAN}",
+        ]
+        for line in info_lines:
+            p = doc.add_paragraph(line)
+            pf = p.paragraph_format
+            pf.space_before = Pt(0)
+            pf.space_after = Pt(0)
+            pf.line_spacing = 1.0
+
+        doc.add_paragraph()
 
         # Buat tabel
         # Kolom: No, Service, Scenario, Expected Result, Request, Response, Result, Notes
@@ -849,10 +862,15 @@ def build_lampiran_document(lampiran_data):
                 row_data['result'],
                 row_data['notes'],
             ]
+            # Baris Tidak dites / Belum dites (Result = N/A) diblok kuning
+            is_na = str(row_data.get('result', '')).strip().upper() == "N/A"
+
             for ci, val in enumerate(values):
                 cell = row_cells[ci]
                 cell.text = val
                 cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                if is_na:
+                    _set_cell_background(cell, NA_FILL_COLOR)
                 # Kolom tertentu rata tengah, sisanya rata kiri
                 align = (WD_ALIGN_PARAGRAPH.CENTER
                          if ci in CENTER_ALIGNED_COLUMNS
