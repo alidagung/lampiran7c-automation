@@ -446,6 +446,22 @@ def _pretty_json(raw):
         return raw
 
 
+def _compress_json(raw):
+    """
+    Compress JSON menjadi satu baris tanpa spasi jika bisa di-parse.
+    Jika gagal parse, rapikan jadi satu baris (buang newline & spasi ganda).
+    Dipakai khusus untuk Response Body.
+    """
+    raw = raw.strip()
+    if not raw:
+        return ""
+    try:
+        obj = json.loads(raw)
+        return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
+    except (ValueError, TypeError):
+        return re.sub(r"\s+", " ", raw).strip()
+
+
 def split_request_response(remarks_text):
     """
     Memisahkan DAN memformat isi kolom Remarks menjadi bagian Request dan
@@ -512,9 +528,9 @@ def split_request_response(remarks_text):
 
     request_part = "\n\n".join(request_blocks).strip()
 
-    # Susun bagian Response
+    # Susun bagian Response (Response Body di-compress, satu baris)
     if response_raw:
-        response_part = f"Response Body:\n{_pretty_json(response_raw)}"
+        response_part = f"Response Body:\n{_compress_json(response_raw)}"
     else:
         response_part = ""
 
