@@ -28,6 +28,9 @@ from docx.oxml import OxmlElement
 # STYLING TABEL (disesuaikan dengan contoh Lampiran 7C)
 # ============================================================
 
+# Font default seluruh dokumen
+FONT_NAME = "Calibri"
+
 # Warna latar header tabel (oranye) - hex tanpa tanda pagar
 HEADER_FILL_COLOR = "ED7D31"
 
@@ -793,14 +796,20 @@ def build_lampiran_document(lampiran_data):
     """
     doc = Document()
 
-    # Halaman A4 portrait dengan margin narrow
+    # Halaman landscape dengan margin sesuai contoh
     _set_page(doc.sections[0])
 
-    # Set default font
+    # Set default font seluruh dokumen (Calibri)
     style = doc.styles['Normal']
     font = style.font
-    font.name = 'Arial'
+    font.name = FONT_NAME
     font.size = Pt(9)
+    # Pastikan berlaku untuk semua jenis skrip (latin, cs, dll.)
+    rpr = style.element.get_or_add_rPr()
+    rfonts = rpr.get_or_add_rFonts()
+    rfonts.set(qn("w:ascii"), FONT_NAME)
+    rfonts.set(qn("w:hAnsi"), FONT_NAME)
+    rfonts.set(qn("w:cs"), FONT_NAME)
 
     # Hanya render section yang benar-benar punya data hasil tes.
     # Section yang seluruh barisnya kosong (None) tidak ditampilkan.
@@ -826,12 +835,14 @@ def build_lampiran_document(lampiran_data):
         title1 = doc.add_paragraph()
         title1.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run1 = title1.add_run("Lampiran 7.C")
+        run1.font.name = FONT_NAME
         run1.font.size = Pt(12)
         run1.font.bold = True
 
         title2 = doc.add_paragraph()
         title2.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run2 = title2.add_run("Skenario dan Hasil Uji Fungsionalitas")
+        run2.font.name = FONT_NAME
         run2.font.size = Pt(11)
         run2.font.bold = True
 
@@ -876,6 +887,7 @@ def build_lampiran_document(lampiran_data):
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 for run in paragraph.runs:
                     run.font.bold = True
+                    run.font.name = FONT_NAME
 
         # Data rows - hanya baris yang benar-benar dites (skip baris kosong)
         for display_no, row_data in enumerate(filled_rows, start=1):
