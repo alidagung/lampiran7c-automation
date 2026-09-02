@@ -16,37 +16,40 @@ Dengan script ini, Anda tidak perlu lagi copy-paste manual data URL, Headers, Re
 
 ---
 
-## 🌐 Cara Cepat: Aplikasi Web (Direkomendasikan)
+## 🌐 Cara Cepat: Aplikasi Web Lokal (Direkomendasikan)
 
-Cara termudah — tidak perlu menaruh file di folder atau menjalankan perintah rumit.
-Anda cukup mengunggah file lewat halaman web, lalu mengunduh hasilnya.
+Aplikasi ini berjalan **100% di komputer Anda** (lokal). File yang Anda unggah
+**tidak dikirim ke internet** — aman untuk data sensitif.
 
-### Langkah-langkah:
+### 🖱️ Cara paling mudah (Windows): cukup double-click
 
-1. **Install Python** (lihat [Langkah 1](#langkah-1-install-python) di bawah jika belum).
+1. **Install Python** dulu jika belum (lihat [Langkah 1](#langkah-1-install-python)).
+   Pastikan mencentang **"Add Python to PATH"** saat instalasi.
 
-2. **Install dependencies** (cukup sekali):
-   ```
-   pip install -r requirements.txt
-   ```
+2. **Setup sekali saja:** double-click file **`setup-pertama-kali.bat`**.
+   Ini akan menginstall komponen yang dibutuhkan (tunggu sampai selesai).
 
-3. **Jalankan aplikasi web:**
-   ```
-   streamlit run app.py
-   ```
+3. **Menjalankan aplikasi:** double-click file **`jalankan-aplikasi.bat`**.
+   Browser akan terbuka otomatis di `http://localhost:8501`.
 
-4. Browser akan **terbuka otomatis** di alamat `http://localhost:8501`.
-   (Jika tidak terbuka, buka alamat tersebut secara manual di browser.)
-
-5. Di halaman web:
+4. Di halaman web:
    - **Unggah** file `UAT Script.xlsx` Anda (klik area unggah atau seret file).
    - Klik tombol **🚀 Proses & Buat Lampiran 7C**.
-   - Lihat ringkasan hasil, lalu klik **⬇️ Unduh Lampiran 7C (.docx)**.
+   - Klik **⬇️ Unduh Lampiran 7C (.docx)**.
 
-6. Untuk **menghentikan** aplikasi: kembali ke Command Prompt/Terminal lalu tekan `Ctrl + C`.
+5. Untuk **menghentikan** aplikasi: tutup jendela hitam (Command Prompt) yang muncul,
+   atau tekan `Ctrl + C` di dalamnya.
 
-> 💡 Aplikasi web memproses file di memori — file yang Anda unggah **tidak** disimpan
-> permanen di komputer, dan hasilnya langsung tersedia untuk diunduh.
+> 💡 Untuk pemakaian berikutnya, Anda **cukup double-click `jalankan-aplikasi.bat`** saja
+> (tidak perlu setup lagi).
+
+### ⌨️ Cara manual (via terminal, semua OS)
+
+```
+pip install -r requirements.txt      (cukup sekali)
+streamlit run app.py
+```
+Lalu buka `http://localhost:8501` di browser.
 
 ---
 
@@ -287,6 +290,8 @@ lampiran7c-automation/
 │   └── test_mapping.py     # Test untuk mapping skenario
 ├── app.py                  # Aplikasi web (Streamlit) - upload & unduh via browser
 ├── main.py                 # Logika inti + script CLI
+├── setup-pertama-kali.bat  # (Windows) install komponen - jalankan sekali di awal
+├── jalankan-aplikasi.bat   # (Windows) jalankan aplikasi web - double-click
 ├── requirements.txt        # Daftar library yang dibutuhkan
 └── README.md               # File panduan ini
 ```
