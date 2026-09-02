@@ -31,6 +31,9 @@ from docx.oxml import OxmlElement
 # Font default seluruh dokumen
 FONT_NAME = "Calibri"
 
+# Label pada kolom Request/Response yang dibuat BOLD (hanya labelnya, isi normal)
+BOLD_LABELS = ["URL Endpoint:", "Header Request:", "Request Body:", "Response Body:"]
+
 # Warna latar header tabel (oranye) - hex tanpa tanda pagar
 HEADER_FILL_COLOR = "ED7D31"
 
@@ -781,6 +784,43 @@ def _set_cell_background(cell, hex_color):
     tcPr.append(shd)
 
 
+def _write_cell_rich(cell, text):
+    """
+    Menulis teks ke sel, di mana LABEL tertentu (URL Endpoint:, Header Request:,
+    Request Body:, Response Body:) dibuat BOLD sedangkan isinya normal.
+
+    Teks multi-baris: setiap baris jadi satu paragraf. Jika suatu baris diawali
+    salah satu label, bagian label dicetak tebal dan sisanya (jika ada di baris
+    yang sama) normal.
+    """
+    # Kosongkan paragraf default sel
+    cell.text = ""
+    lines = text.split("\n")
+
+    first = True
+    for line in lines:
+        p = cell.paragraphs[0] if first else cell.add_paragraph()
+        first = False
+
+        matched_label = None
+        for label in BOLD_LABELS:
+            if line.strip() == label or line.startswith(label):
+                matched_label = label
+                break
+
+        if matched_label:
+            run_label = p.add_run(matched_label)
+            run_label.font.bold = True
+            run_label.font.name = FONT_NAME
+            sisa = line[len(matched_label):]
+            if sisa:
+                run_rest = p.add_run(sisa)
+                run_rest.font.name = FONT_NAME
+        else:
+            run = p.add_run(line)
+            run.font.name = FONT_NAME
+
+
 def build_lampiran_document(lampiran_data):
     """
     Membangun dokumen Word Lampiran 7C dari data hasil mapping dan
@@ -907,7 +947,11 @@ def build_lampiran_document(lampiran_data):
 
             for ci, val in enumerate(values):
                 cell = row_cells[ci]
-                cell.text = val
+                # Kolom Request (4) & Response (5): label dibuat bold, isi normal
+                if ci in (4, 5):
+                    _write_cell_rich(cell, val)
+                else:
+                    cell.text = val
                 cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
                 if is_na:
                     _set_cell_background(cell, NA_FILL_COLOR)
