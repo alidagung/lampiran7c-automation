@@ -31,9 +31,11 @@ from docx.oxml import OxmlElement
 # Warna latar header tabel (oranye) - hex tanpa tanda pagar
 HEADER_FILL_COLOR = "ED7D31"
 
-# Lebar tiap kolom (cm), urut: No, Service, Scenario, Expected Result,
-# Request, Response, Result, Notes
-COLUMN_WIDTHS_CM = [1.23, 2.50, 3.50, 3.00, 8.52, 3.48, 1.50, 3.02]
+# Lebar tiap kolom dalam TWIPS (1/20 poin), urut: No, Service, Scenario,
+# Expected Result, Request, Response, Result, Notes.
+# Nilai diambil dari tblGrid contoh Lampiran 7C. Total = 15168 twips (~26.7 cm)
+# sehingga tabel muat di halaman LANDSCAPE.
+COLUMN_WIDTHS_TWIPS = [700, 1418, 1984, 1701, 4829, 1975, 851, 1710]
 
 # Kolom yang isinya di-rata-tengah (selain itu rata kiri).
 # Indeks: 0=No, 6=Result
@@ -664,6 +666,70 @@ def map_uat_to_lampiran(uat_data):
 # WORD DOCUMENT GENERATOR
 # ============================================================
 
+def _set_landscape(section):
+    """
+    Ubah orientasi sebuah section menjadi LANDSCAPE (A4) dengan margin kecil,
+    agar tabel yang lebar (8 kolom) muat penuh.
+    """
+    from docx.enum.section import WD_ORIENT
+
+    # A4 landscape: lebar 29.7 cm x tinggi 21 cm
+    new_width = Cm(29.7)
+    new_height = Cm(21.0)
+    section.orientation = WD_ORIENT.LANDSCAPE
+    section.page_width = new_width
+    section.page_height = new_height
+    # Margin kiri/kanan kecil supaya area isi lebar
+    section.left_margin = Cm(0.9)
+    section.right_margin = Cm(1.27)
+    section.top_margin = Cm(1.5)
+    section.bottom_margin = Cm(1.5)
+
+
+def _set_table_fixed_layout(table, col_widths_twips):
+    """
+    Kunci lebar kolom tabel agar Word TIDAK meng-autofit (yang menyebabkan
+    teks pecah vertikal). Caranya:
+      1. Set tblLayout = fixed
+      2. Set lebar total tabel (tblW)
+      3. Definisikan <w:tblGrid> berisi lebar tiap kolom (twips)
+
+    Args:
+        table: objek tabel docx
+        col_widths_twips: list lebar kolom dalam twips
+    """
+    tbl = table._tbl
+    tblPr = tbl.tblPr
+
+    # 1. Layout fixed (bukan autofit)
+    layout = tblPr.find(qn("w:tblLayout"))
+    if layout is None:
+        layout = OxmlElement("w:tblLayout")
+        tblPr.append(layout)
+    layout.set(qn("w:type"), "fixed")
+
+    # 2. Lebar total tabel
+    total = sum(col_widths_twips)
+    tblW = tblPr.find(qn("w:tblW"))
+    if tblW is None:
+        tblW = OxmlElement("w:tblW")
+        tblPr.append(tblW)
+    tblW.set(qn("w:w"), str(total))
+    tblW.set(qn("w:type"), "dxa")
+
+    # 3. Definisikan grid kolom (buang yang lama jika ada)
+    old_grid = tbl.find(qn("w:tblGrid"))
+    if old_grid is not None:
+        tbl.remove(old_grid)
+    grid = OxmlElement("w:tblGrid")
+    for w in col_widths_twips:
+        gc = OxmlElement("w:gridCol")
+        gc.set(qn("w:w"), str(w))
+        grid.append(gc)
+    # tblGrid harus diletakkan tepat setelah tblPr
+    tblPr.addnext(grid)
+
+
 def _set_cell_background(cell, hex_color):
     """
     Memberi warna latar (shading) pada sebuah sel tabel.
@@ -697,6 +763,9 @@ def build_lampiran_document(lampiran_data):
         docx.Document: dokumen yang siap disimpan.
     """
     doc = Document()
+
+    # Halaman landscape agar tabel 8 kolom yang lebar bisa muat
+    _set_landscape(doc.sections[0])
 
     # Set default font
     style = doc.styles['Normal']
@@ -750,6 +819,8 @@ def build_lampiran_document(lampiran_data):
         table = doc.add_table(rows=1, cols=8)
         table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        # Kunci lebar kolom (fixed layout) agar teks tidak pecah vertikal
+        _set_table_fixed_layout(table, COLUMN_WIDTHS_TWIPS)
 
         # Header row - latar oranye, teks bold, rata tengah
         header_cells = table.rows[0].cells
@@ -789,10 +860,11 @@ def build_lampiran_document(lampiran_data):
                 for paragraph in cell.paragraphs:
                     paragraph.alignment = align
 
-        # Set lebar kolom sesuai contoh Lampiran 7C
+        # Set lebar kolom di tiap sel (memperkuat fixed layout dari tblGrid).
+        # docx.Cm butuh EMU; twips -> cm: twips / 567
         for row in table.rows:
-            for ci, width_cm in enumerate(COLUMN_WIDTHS_CM):
-                row.cells[ci].width = Cm(width_cm)
+            for ci, width_twips in enumerate(COLUMN_WIDTHS_TWIPS):
+                row.cells[ci].width = Cm(width_twips / 567.0)
 
     return doc
 
