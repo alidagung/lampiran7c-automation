@@ -12,6 +12,7 @@ Fungsi utama:
 """
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -157,43 +158,45 @@ def detect_section_header(row):
     if langkah_tes:
         return None
 
-    # Cek teks di kolom B atau C
+    # Cek teks di kolom B atau C (gabung untuk pemeriksaan toleran)
     kategori_tes = get_cell_value(row, COL_KATEGORI_TES)
     nama_modul = get_cell_value(row, COL_NAMA_MODUL)
+    t = (kategori_tes + " " + nama_modul).lower()
 
-    # Gabungkan kedua kolom untuk pengecekan
-    text_to_check = kategori_tes + " " + nama_modul
+    # Deteksi TOLERAN berbasis sub-kata kunci (tidak terpaku string persis),
+    # supaya variasi penulisan antar mitra tetap terdeteksi. Contoh yang kini
+    # dikenali untuk Virtual Account: "Transfer VA", "Virtual Account",
+    # "Transfer Virtual Account", "VA Transfer", dsb.
+    # Urutan pengecekan: dari yang PALING SPESIFIK ke umum.
 
-    # Section keywords - ordered from most specific to least specific
-    # to ensure exact matching (e.g., "Transfer VA Prima" before "Transfer VA")
-    section_keywords = [
-        "Interbank Transfer via BI FAST",
-        "Transfer VA Prima",
-        "Transfer VA BI FAST",
-        "Balance Services",
-        "Intrabank Transfer",
-        "Interbank Transfer",
-        "RTGS Transfer",
-        "SKNBI Transfer",
-        "Transfer VA",
-    ]
+    has_bifast = ("bi fast" in t) or ("bifast" in t) or ("bi-fast" in t)
+    has_prima = "prima" in t
+    # "va" sebagai kata utuh, atau frasa "virtual account"
+    has_va = ("virtual account" in t) or bool(re.search(r"\bva\b", t))
 
-    for keyword in section_keywords:
-        # Check in both kolom B and kolom C
-        if keyword.lower() in kategori_tes.lower() or keyword.lower() in nama_modul.lower():
-            # For "Transfer VA" (without Prima/BI FAST), we need exact matching
-            # to avoid matching "Transfer VA Prima" or "Transfer VA BI FAST"
-            if keyword == "Transfer VA":
-                # Make sure neither kolom B nor kolom C contains "Prima" or "BI FAST"
-                combined_lower = text_to_check.lower()
-                if "prima" in combined_lower or "bi fast" in combined_lower:
-                    continue
-            elif keyword == "Interbank Transfer":
-                # Make sure it's not "Interbank Transfer via BI FAST"
-                combined_lower = text_to_check.lower()
-                if "bi fast" in combined_lower or "via bi" in combined_lower:
-                    continue
-            return keyword
+    # 1) Virtual Account - varian (paling spesifik dulu)
+    if has_va and has_prima:
+        return "Transfer VA Prima"
+    if has_va and has_bifast:
+        return "Transfer VA BI FAST"
+    if has_va:
+        return "Transfer VA"
+
+    # 2) Interbank - varian
+    if "interbank" in t and has_bifast:
+        return "Interbank Transfer via BI FAST"
+    if "interbank" in t:
+        return "Interbank Transfer"
+
+    # 3) Section lain (kata kunci inti)
+    if "balance" in t:
+        return "Balance Services"
+    if "intrabank" in t:
+        return "Intrabank Transfer"
+    if "rtgs" in t:
+        return "RTGS Transfer"
+    if "sknbi" in t or re.search(r"\bskn\b", t):
+        return "SKNBI Transfer"
 
     return None
 
@@ -303,7 +306,6 @@ def read_uat_script(filepath):
 # ============================================================
 
 import json
-import re
 
 
 # Parser Remarks dibuat FLEKSIBEL: hanya berpatokan pada KATA KUNCI inti
