@@ -306,61 +306,108 @@ import json
 import re
 
 
-# Penanda blok yang dikenali di kolom Remarks. Mendukung 2 format sumber:
-#   Format A (mis. Intrabank): "URL:", "Headers:", "Request Body:", "Response:"
-#   Format B (mis. Balance):   "Request URL:", "Request headers:",
-#                              "Request body:", "Response body:"
-# Setiap entri: (nama_kanonik, regex penanda)
-_BLOCK_MARKERS = [
-    ("url", r"(?:request\s+)?url(?:\s+endpoint)?\s*:"),
-    ("headers", r"(?:request\s+)?head(?:er|ers)(?:\s+request)?\s*:"),
-    ("request_body", r"request\s*body\s*:"),
-    ("response", r"response(?:\s*body)?\s*:"),
-]
+# Parser Remarks dibuat FLEKSIBEL: hanya berpatokan pada KATA KUNCI inti
+# (url / header / request / response), tidak terpaku pada kata pengiring.
+# Jadi semua variasi mitra dikenali, contoh:
+#   URL:  |  URL Endpoint:  |  Request URL:  |  URL Request:
+#   Headers:  |  Header:  |  Header Request:  |  Request headers:
+#   Request Body:  |  Request body:  |  Body:  |  Payload:
+#   Response:  |  Response Body:  |  Response body:
 
-# Regex gabungan untuk menemukan SEMUA penanda di mana saja (termasuk yang
-# menempel di tengah baris, contoh: "}Response body:").
-_MARKER_REGEX = re.compile(
-    r"(?im)(" + "|".join(m[1] for m in _BLOCK_MARKERS) + r")"
+# Batas panjang sebuah baris agar masih dianggap "label" (bukan isi data).
+_LABEL_MAX_LEN = 40
+
+# Penanda blok yang kadang MENEMPEL di tengah/akhir baris (mis. "}Response body:").
+# Kita sisipkan newline sebelum penanda ini agar terbaca sebagai label terpisah.
+_INLINE_MARKER_REGEX = re.compile(
+    r"(?i)(?<=[}\]])"
+    r"(?=(?:request|url|endpoint|header|headers|body|payload|response)"
+    r"(?:[ \t]+\w+){0,2}[ \t]*:)"
 )
 
 
-def _classify_marker(marker_text):
-    """Kembalikan nama kanonik blok dari teks penanda yang cocok."""
-    t = marker_text.strip().lower()
-    # Urutan pengecekan penting: 'request body' & 'response body' sebelum yang umum
-    if re.match(r"request\s*body\s*:", t):
-        return "request_body"
-    if re.match(r"response(?:\s*body)?\s*:", t):
-        return "response"
-    if re.match(r"(?:request\s+)?url(?:\s+endpoint)?\s*:", t):
-        return "url"
-    if re.match(r"(?:request\s+)?head(?:er|ers)(?:\s+request)?\s*:", t):
-        return "headers"
-    return None
+def _normalize_inline_markers(text):
+    """
+    Sisipkan newline sebelum penanda blok yang menempel di akhir baris
+    sebelumnya, contoh: '...}Response body: {...}' -> '...}\nResponse body: {...}'.
+    Ini membuat parser per-baris dapat mengenalinya sebagai label.
+    """
+    return _INLINE_MARKER_REGEX.sub("\n", text)
+
+
+def _classify_label(line):
+    """
+    Klasifikasikan sebuah baris label penanda ke salah satu blok:
+    'url', 'headers', 'request_body', 'response'. Mengembalikan (nama, sisa_teks)
+    di mana sisa_teks adalah teks setelah tanda ':' pada baris yang sama
+    (biasanya kosong, tapi kadang URL menempel: "URL: https://...").
+
+    Aturan (urut prioritas agar tidak salah klasifikasi):
+      1. mengandung "response"           -> response
+      2. mengandung "url" atau "endpoint"-> url
+      3. mengandung "header"             -> headers
+      4. mengandung "request"/"body"/"payload" -> request_body
+
+    Baris hanya dianggap label jika:
+      - mengandung tanda ':'
+      - bagian SEBELUM ':' pendek (<= _LABEL_MAX_LEN) dan tidak berisi '{'/'['
+        (supaya baris data JSON tidak salah dikira label).
+
+    Jika bukan label, kembalikan (None, None).
+    """
+    if ":" not in line:
+        return (None, None)
+
+    before, after = line.split(":", 1)
+    key = before.strip().lower()
+
+    # Tolak kalau bagian sebelum ':' terlalu panjang atau tampak seperti data
+    if len(key) == 0 or len(key) > _LABEL_MAX_LEN:
+        return (None, None)
+    if "{" in key or "[" in key or '"' in key:
+        return (None, None)
+
+    if "response" in key:
+        return ("response", after.strip())
+    if "url" in key or "endpoint" in key:
+        return ("url", after.strip())
+    if "header" in key:
+        return ("headers", after.strip())
+    if "request" in key or "body" in key or "payload" in key:
+        return ("request_body", after.strip())
+
+    return (None, None)
 
 
 def _parse_remarks_blocks(text):
     """
     Pecah isi Remarks menjadi dict blok: {url, headers, request_body, response}.
 
-    Menggunakan posisi tiap penanda (di mana saja dalam teks) sehingga tahan
-    terhadap variasi format, termasuk penanda yang menempel di akhir baris
-    sebelumnya (mis. "}Response body:").
+    Bekerja per-baris: cari baris yang merupakan LABEL (via _classify_label),
+    lalu kumpulkan semua baris berikutnya sebagai isi blok sampai ketemu label
+    berikutnya. Pendekatan berbasis kata kunci ini tahan terhadap variasi
+    penamaan antar mitra.
     """
-    blocks = {}
-    matches = list(_MARKER_REGEX.finditer(text))
-    if not matches:
-        return blocks
+    lines = text.split("\n")
 
-    for i, m in enumerate(matches):
-        name = _classify_marker(m.group(0))
-        if name is None:
-            continue
-        start = m.end()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        content = text[start:end].strip()
-        # Jangan timpa blok yang sudah terisi (ambil kemunculan pertama)
+    # Temukan indeks baris yang merupakan label + jenis bloknya
+    label_positions = []  # list of (idx, name, inline_rest)
+    for idx, line in enumerate(lines):
+        name, rest = _classify_label(line)
+        if name is not None:
+            label_positions.append((idx, name, rest))
+
+    blocks = {}
+    for i, (idx, name, inline_rest) in enumerate(label_positions):
+        start = idx + 1
+        end = label_positions[i + 1][0] if i + 1 < len(label_positions) else len(lines)
+        body_lines = lines[start:end]
+        content = "\n".join(body_lines).strip()
+        # Jika ada teks menempel di baris label (mis. "URL: https://..."),
+        # gabungkan di depan.
+        if inline_rest:
+            content = (inline_rest + ("\n" + content if content else "")).strip()
+        # Ambil kemunculan pertama tiap blok
         if name not in blocks and content:
             blocks[name] = content
 
@@ -511,6 +558,7 @@ def split_request_response(remarks_text):
         return "", ""
 
     text = remarks_text.replace("\r\n", "\n").replace("\r", "\n")
+    text = _normalize_inline_markers(text)
 
     blocks = _parse_remarks_blocks(text)
 

@@ -74,3 +74,54 @@ class TestParserFunctionsRemoved:
     def test_header_keys_removed(self):
         """Konstanta _HEADER_KEYS tidak ada lagi."""
         assert not hasattr(main, '_HEADER_KEYS')
+
+
+
+# ============================================================
+# Test fleksibilitas parser terhadap variasi penanda antar mitra
+# ============================================================
+
+from main import split_request_response
+
+
+class TestParserFleksibel:
+    """Parser harus mengenali kata kunci inti (url/header/request/response)
+    tanpa terpaku pada kata pengiring, di berbagai variasi format mitra."""
+
+    def _cek_lengkap(self, remarks):
+        req, resp = split_request_response(remarks)
+        return (
+            "URL Endpoint:" in req
+            and "Header Request:" in req
+            and "Request Body:" in req
+            and "Response Body:" in resp
+        )
+
+    def test_format_url_headers_request_body_response(self):
+        r = ("URL:\nhttps://a.test/x\n\nHeaders:\nAuth: xyz\n\n"
+             "Request Body:\n{\"a\":1}\n\nResponse:\n{\"ok\":true}")
+        assert self._cek_lengkap(r)
+
+    def test_format_request_url_dan_penanda_menempel(self):
+        # Penanda 'Response body:' menempel di akhir baris JSON sebelumnya
+        r = ("Request URL: POST https://b.test/y\n"
+             "Request headers: {\"H\":[\"v\"]}\n"
+             "Request body: {\"b\":2}Response body: {\"ok\":false}")
+        assert self._cek_lengkap(r)
+
+    def test_format_url_endpoint_header_request(self):
+        r = ("URL Endpoint:\nhttps://c.test/z\n\nHeader Request:\n[Auth: bearer]\n\n"
+             "Request Body:\n{\"c\":3}\n\nResponse Body:\n{\"code\":200}")
+        assert self._cek_lengkap(r)
+
+    def test_format_url_request_header_saja(self):
+        # Mitra pakai "URL Request:" dan "Header:" (tanpa kata 'Request'/'s')
+        r = ("URL Request:\nhttps://d.test/w\n\nHeader:\nContent-Type: application/json\n\n"
+             "Request Body:\n{\"d\":4}\n\nResponse:\n{\"r\":\"ok\"}")
+        assert self._cek_lengkap(r)
+
+    def test_format_payload_sebagai_body(self):
+        # 'Payload:' dikenali sebagai Request Body
+        r = ("URL:\nhttps://e.test\n\nHeader:\nX: y\n\nPayload:\n{\"e\":5}\n\n"
+             "Response:\n{\"z\":9}")
+        assert self._cek_lengkap(r)
