@@ -439,7 +439,7 @@ def _format_headers(headers_raw):
     pairs = []
     raw = headers_raw.strip()
 
-    # Coba parse sebagai JSON object dulu (Bentuk B)
+    # Coba parse sebagai JSON dulu (bisa object ATAU array of strings)
     parsed = None
     try:
         parsed = json.loads(raw)
@@ -447,22 +447,32 @@ def _format_headers(headers_raw):
         parsed = None
 
     if isinstance(parsed, dict):
+        # Bentuk B: {"Authorization": ["Bearer xxx"], ...}
         for key, val in parsed.items():
             if isinstance(val, list):
                 val = ", ".join(str(v) for v in val)
             pairs.append(f'{key}={val}')
+    elif isinstance(parsed, list):
+        # Bentuk C: ["Content-Type=application/json", "Authorization=Bearer xxx"]
+        # Item sudah "Key=Value" -> pakai apa adanya (jangan bungkus kutip lagi).
+        for item in parsed:
+            pairs.append(str(item))
     else:
-        # Bentuk A: parsing per baris
+        # Bentuk A: parsing per baris polos
         for line in raw.split("\n"):
             s = line.strip().rstrip(",")
             if not s or s in ("[", "]", "{", "}"):
                 continue
-            if ":" in s:
+            # Buang kutip pembungkus di sekeliling item bila ada
+            # (mis. baris '"Content-Type=application/json"').
+            if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+                s = s[1:-1]
+            if "=" in s and ":" not in s.split("=", 1)[0]:
+                # Sudah format Key=Value
+                pairs.append(s)
+            elif ":" in s:
                 key, val = s.split(":", 1)
                 pairs.append(f'{key.strip().strip(chr(34))}={val.strip().strip(chr(34))}')
-            elif "=" in s:
-                key, val = s.split("=", 1)
-                pairs.append(f'{key.strip()}={val.strip()}')
             else:
                 pairs.append(s)
 

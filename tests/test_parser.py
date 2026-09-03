@@ -125,3 +125,42 @@ class TestParserFleksibel:
         r = ("URL:\nhttps://e.test\n\nHeader:\nX: y\n\nPayload:\n{\"e\":5}\n\n"
              "Response:\n{\"z\":9}")
         assert self._cek_lengkap(r)
+
+
+
+# ============================================================
+# Test format header: tidak boleh menghasilkan kutip ganda ("")
+# ============================================================
+
+from main import _format_headers
+
+
+class TestFormatHeaderKutipGanda:
+    """Header value dengan karakter base64 (+ / =) atau input yang sudah
+    berupa array 'Key=Value' TIDAK boleh menghasilkan kutip ganda."""
+
+    TOKEN = "Bearer 8KGjr+yYgfCqqqHtgo/slqnpoa/wpYW/8KKylOuQvfCikYPonqc="
+
+    def test_input_sudah_array_key_value(self):
+        h = '[\n  "Content-Type=application/json",\n  "Authorization=%s"\n]' % self.TOKEN
+        out = _format_headers(h)
+        assert '""' not in out
+        assert 'Authorization=%s' % self.TOKEN in out
+
+    def test_input_json_object_string(self):
+        h = '{"Authorization": "%s", "Content-Type": "application/json"}' % self.TOKEN
+        out = _format_headers(h)
+        assert '""' not in out
+        assert "Authorization=%s" % self.TOKEN in out
+
+    def test_input_json_object_array_value(self):
+        h = '{"Authorization": ["%s"]}' % self.TOKEN
+        out = _format_headers(h)
+        assert '""' not in out
+        assert "Authorization=%s" % self.TOKEN in out
+
+    def test_input_baris_polos(self):
+        h = "[\nContent-Type: application/json\nAuthorization: %s\n]" % self.TOKEN
+        out = _format_headers(h)
+        assert '""' not in out
+        assert "Authorization=%s" % self.TOKEN in out
