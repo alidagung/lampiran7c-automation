@@ -118,8 +118,9 @@ UAT_TO_LAMPIRAN_MAPPING = [
     ("RTGS Transfer", "5", "API RTGS Transfer", False),
     ("SKNBI Transfer", "6", "API SKNBI Transfer", False),
     ("Transfer VA", "7", "API Virtual Account", False),
-    ("Transfer VA Prima", "8", "API Virtual Account", True),
-    ("Transfer VA BI FAST", "9", "API Virtual Account", True),
+    # Catatan: "Transfer VA Prima" (skenario 8.x) dan "Transfer VA BI FAST"
+    # (skenario 9.x) SENGAJA TIDAK dipindahkan ke Lampiran 7C sesuai keputusan
+    # bisnis (sama seperti Interbank Transfer via BI FAST).
 ]
 
 

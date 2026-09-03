@@ -190,13 +190,14 @@ Response:
 
     def test_fill_empty_only_virtual_account(self):
         """
-        Test logika 'fill empty only' untuk Virtual Account.
-        Skenario 7 mengisi terlebih dahulu, Skenario 8 dan 9 hanya mengisi yang kosong.
+        Aturan bisnis: 'Transfer VA Prima' (8.x) dan 'Transfer VA BI FAST' (9.x)
+        TIDAK dipindahkan ke Lampiran 7C. Hanya 'Transfer VA' (7.x) yang masuk.
         """
         uat_data = {
             "Transfer VA": [
                 self._make_row("7.1", remarks="va remarks 1"),
                 self._make_row("7.3", remarks="va remarks 3"),
+                # 7.2 sengaja tidak ada datanya
             ],
             "Transfer VA Prima": [
                 self._make_row("8.1", remarks="prima remarks 1"),
@@ -205,7 +206,6 @@ Response:
             "Transfer VA BI FAST": [
                 self._make_row("9.1", remarks="vabifast remarks 1"),
                 self._make_row("9.2", remarks="vabifast remarks 2"),
-                self._make_row("9.3", remarks="vabifast remarks 3"),
             ],
         }
 
@@ -214,57 +214,29 @@ Response:
         # Row 1 (index 0): diisi oleh skenario 7
         assert result["API Virtual Account"][0] is not None
         assert result["API Virtual Account"][0]['request'] == "va remarks 1"
-        assert "prima" not in result["API Virtual Account"][0]['request']
-        assert "vabifast" not in result["API Virtual Account"][0]['request']
 
-        # Row 2 (index 1): TIDAK ada di skenario 7, diisi oleh skenario 8
-        assert result["API Virtual Account"][1] is not None
-        assert result["API Virtual Account"][1]['request'] == "prima remarks 2"
+        # Row 2 (index 1): 7.2 tidak ada -> TETAP KOSONG (Prima/BI FAST tidak mengisi)
+        assert result["API Virtual Account"][1] is None
 
-        # Row 3 (index 2): sudah diisi skenario 7 -> skenario 8 dan 9 TIDAK overwrite
+        # Row 3 (index 2): diisi skenario 7
         assert result["API Virtual Account"][2] is not None
         assert result["API Virtual Account"][2]['request'] == "va remarks 3"
-        assert "vabifast remarks 3" not in result["API Virtual Account"][2]['request']
 
-    def test_fill_empty_va_priority_8_before_9(self):
-        """
-        Test bahwa skenario 8 diproses sebelum skenario 9 untuk VA.
-        Jika row kosong di skenario 7, skenario 8 mengisi duluan.
-        """
+        # Tidak ada satupun data Prima / BI FAST yang bocor ke Virtual Account
+        for row in result["API Virtual Account"]:
+            if row is not None:
+                assert "prima" not in row['request']
+                assert "vabifast" not in row['request']
+
+    def test_va_prima_bifast_tidak_dipindahkan(self):
+        """Jika HANYA ada data VA Prima & BI FAST (tanpa VA biasa), maka
+        section Virtual Account harus KOSONG seluruhnya."""
         uat_data = {
-            "Transfer VA": [
-                # Hanya row 1, sisanya kosong
-                self._make_row("7.1", remarks="va remarks 1"),
-            ],
-            "Transfer VA Prima": [
-                self._make_row("8.2", remarks="prima remarks 2"),
-                self._make_row("8.4", remarks="prima remarks 4"),
-            ],
-            "Transfer VA BI FAST": [
-                self._make_row("9.2", remarks="vabifast remarks 2"),
-                self._make_row("9.3", remarks="vabifast remarks 3"),
-                self._make_row("9.4", remarks="vabifast remarks 4"),
-            ],
+            "Transfer VA Prima": [self._make_row("8.1", remarks="prima 1")],
+            "Transfer VA BI FAST": [self._make_row("9.1", remarks="bifast 1")],
         }
-
         result = map_uat_to_lampiran(uat_data)
-
-        # Row 1 (index 0): diisi skenario 7
-        assert result["API Virtual Account"][0] is not None
-        assert result["API Virtual Account"][0]['request'] == "va remarks 1"
-
-        # Row 2 (index 1): kosong di 7, diisi skenario 8 (prima)
-        assert result["API Virtual Account"][1] is not None
-        assert result["API Virtual Account"][1]['request'] == "prima remarks 2"
-
-        # Row 3 (index 2): kosong di 7, tidak ada di 8, diisi skenario 9
-        assert result["API Virtual Account"][2] is not None
-        assert result["API Virtual Account"][2]['request'] == "vabifast remarks 3"
-
-        # Row 4 (index 3): kosong di 7, diisi skenario 8 (prima), skenario 9 TIDAK overwrite
-        assert result["API Virtual Account"][3] is not None
-        assert result["API Virtual Account"][3]['request'] == "prima remarks 4"
-        assert "vabifast remarks 4" not in result["API Virtual Account"][3]['request']
+        assert all(r is None for r in result["API Virtual Account"])
 
     def test_tidak_dites_handling(self):
         """Test handling ketika Hasil Aktual = 'Tidak dites'.
