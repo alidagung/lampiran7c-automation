@@ -67,3 +67,44 @@ class TestDetectAnomalies:
     def test_warning_menyebut_nomor_kasus(self):
         w = detect_anomalies(_row("7.15", "Berhasil", ""))
         assert "7.15" in w[0]
+
+
+
+class TestDeteksiTambahan:
+    """Deteksi yang lebih teliti (tanpa mengubah data)."""
+
+    def test_request_body_kurung_tidak_lengkap(self):
+        # Kurung penutup '}' hilang -> JSON tidak valid
+        remarks = (
+            "URL:\nhttps://x\n\nHeaders:\nA: b\n\n"
+            'Request Body:\n{\n"accountNo": "123",\n  "ref": "abc"\n\n'
+            'Response:\n{"ok":true}'
+        )
+        w = detect_anomalies(_row("1.1", "Berhasil", remarks))
+        assert any("Request Body bukan JSON valid" in x for x in w)
+
+    def test_response_kosong_saat_berhasil(self):
+        remarks = (
+            "URL:\nhttps://x\n\nHeaders:\nA: b\n\n"
+            'Request Body:\n{"a":1}\n\nResponse:\n'
+        )
+        w = detect_anomalies(_row("2.2", "Berhasil", remarks))
+        assert any("Response Body kosong" in x for x in w)
+
+    def test_header_tidak_wajar(self):
+        # Ada item header yang bukan Key=Value / Key: Value
+        remarks = (
+            "URL:\nhttps://x\n\nHeaders:\n[\n  \"barisrusaktanpaseparator\"\n]\n\n"
+            'Request Body:\n{"a":1}\n\nResponse:\n{"ok":true}'
+        )
+        w = detect_anomalies(_row("3.3", "Berhasil", remarks))
+        assert any("Header tidak wajar" in x for x in w)
+
+    def test_data_normal_tidak_ada_peringatan_baru(self):
+        # accountNo kosong TAPI JSON tetap valid -> TIDAK dianggap masalah
+        remarks = (
+            "URL:\nhttps://x\n\nHeaders:\nContent-Type: application/json\n\n"
+            'Request Body:\n{"accountNo": "", "ref": "abc"}\n\n'
+            'Response:\n{"responseCode":"200"}'
+        )
+        assert detect_anomalies(_row("4.4", "Berhasil", remarks)) == []

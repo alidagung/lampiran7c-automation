@@ -677,10 +677,15 @@ def detect_anomalies(row_data):
     Deteksi kondisi ABNORMAL pada satu baris UAT agar bisa ditampilkan sebagai
     peringatan (tidak mengubah data apa pun - hanya memberi tahu).
 
+    PENTING: fungsi ini TIDAK mengubah data apa pun. Hanya melaporkan lokasi
+    potensi masalah agar bisa di-cross-check manual oleh pengguna.
+
     Kondisi yang dideteksi (khusus baris dengan Hasil Aktual = "Berhasil"):
       1. Remarks kosong padahal hasil Berhasil
       2. Ada bagian log yang hilang (URL / Header / Request Body / Response)
-      3. Request Body atau Response Body bukan JSON valid
+      3. Request Body atau Response Body bukan JSON valid (syntax rusak)
+      4. Response Body kosong padahal hasil Berhasil
+      5. Ada item Header yang tidak berbentuk "Key=Value" (tidak wajar)
 
     Args:
         row_data: dict baris UAT (punya 'nomor_kasus_tes', 'hasil_aktual', 'remarks')
@@ -702,9 +707,10 @@ def detect_anomalies(row_data):
         return warnings
 
     text = remarks.replace("\r\n", "\n").replace("\r", "\n")
+    text = _normalize_inline_markers(text)
     blocks = _parse_remarks_blocks(text)
 
-    # Bagian yang hilang
+    # (2) Bagian yang hilang
     if not blocks.get("url", "").strip():
         warnings.append(f"Kasus {kasus}: bagian URL tidak ditemukan pada Remarks.")
     if not blocks.get("headers", "").strip():
@@ -714,15 +720,70 @@ def detect_anomalies(row_data):
     if not blocks.get("response", "").strip():
         warnings.append(f"Kasus {kasus}: bagian Response tidak ditemukan pada Remarks.")
 
-    # JSON tidak valid (hanya cek jika bagiannya ada)
+    # (3) JSON tidak valid (hanya cek jika bagiannya ada)
     body_raw = blocks.get("request_body", "")
     if body_raw.strip() and not _is_valid_json(body_raw):
-        warnings.append(f"Kasus {kasus}: Request Body bukan JSON valid - ditampilkan apa adanya, mohon cek manual.")
+        warnings.append(
+            f"Kasus {kasus}: Request Body bukan JSON valid (format/syntax) - mohon cek manual."
+        )
+
     resp_raw = blocks.get("response", "")
-    if resp_raw.strip() and not _is_valid_json(resp_raw):
-        warnings.append(f"Kasus {kasus}: Response Body bukan JSON valid - ditampilkan apa adanya, mohon cek manual.")
+    if resp_raw.strip():
+        if not _is_valid_json(resp_raw):
+            warnings.append(
+                f"Kasus {kasus}: Response Body bukan JSON valid (format/syntax) - mohon cek manual."
+            )
+    else:
+        # (4) Response kosong padahal Berhasil
+        warnings.append(
+            f"Kasus {kasus}: hasil 'Berhasil' tetapi Response Body kosong - mohon cek manual."
+        )
+
+    # (5) Header ada item yang tidak berbentuk Key=Value
+    headers_raw = blocks.get("headers", "")
+    if headers_raw.strip():
+        for item in _iter_header_items(headers_raw):
+            # Item wajar bila mengandung pemisah ':' atau '=' antara key & value
+            if ("=" not in item) and (":" not in item):
+                preview = item[:40] + ("..." if len(item) > 40 else "")
+                warnings.append(
+                    f"Kasus {kasus}: ada Header tidak wajar (bukan Key=Value): '{preview}' - mohon cek manual."
+                )
+                break  # cukup satu peringatan header per kasus
 
     return warnings
+
+
+def _iter_header_items(headers_raw):
+    """
+    Kembalikan daftar item header (string) dari blok Header mentah, mendukung
+    JSON object, JSON array, maupun baris polos. Hanya untuk PEMERIKSAAN
+    (tidak mengubah data).
+    """
+    raw = headers_raw.strip()
+    items = []
+    parsed = None
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        parsed = None
+
+    if isinstance(parsed, dict):
+        for k, v in parsed.items():
+            if isinstance(v, list):
+                v = ", ".join(str(x) for x in v)
+            items.append(f"{k}: {v}")
+    elif isinstance(parsed, list):
+        items = [str(x) for x in parsed]
+    else:
+        for line in raw.split("\n"):
+            s = line.strip().rstrip(",")
+            if not s or s in ("[", "]", "{", "}"):
+                continue
+            if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+                s = s[1:-1]
+            items.append(s)
+    return items
 
 
 def map_uat_to_lampiran(uat_data, collect_warnings=False):
