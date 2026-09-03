@@ -12,6 +12,7 @@ Fungsi utama:
 """
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -117,8 +118,9 @@ UAT_TO_LAMPIRAN_MAPPING = [
     ("RTGS Transfer", "5", "API RTGS Transfer", False),
     ("SKNBI Transfer", "6", "API SKNBI Transfer", False),
     ("Transfer VA", "7", "API Virtual Account", False),
-    ("Transfer VA Prima", "8", "API Virtual Account", True),
-    ("Transfer VA BI FAST", "9", "API Virtual Account", True),
+    # Catatan: "Transfer VA Prima" (skenario 8.x) dan "Transfer VA BI FAST"
+    # (skenario 9.x) SENGAJA TIDAK dipindahkan ke Lampiran 7C sesuai keputusan
+    # bisnis (sama seperti Interbank Transfer via BI FAST).
 ]
 
 
@@ -157,43 +159,45 @@ def detect_section_header(row):
     if langkah_tes:
         return None
 
-    # Cek teks di kolom B atau C
+    # Cek teks di kolom B atau C (gabung untuk pemeriksaan toleran)
     kategori_tes = get_cell_value(row, COL_KATEGORI_TES)
     nama_modul = get_cell_value(row, COL_NAMA_MODUL)
+    t = (kategori_tes + " " + nama_modul).lower()
 
-    # Gabungkan kedua kolom untuk pengecekan
-    text_to_check = kategori_tes + " " + nama_modul
+    # Deteksi TOLERAN berbasis sub-kata kunci (tidak terpaku string persis),
+    # supaya variasi penulisan antar mitra tetap terdeteksi. Contoh yang kini
+    # dikenali untuk Virtual Account: "Transfer VA", "Virtual Account",
+    # "Transfer Virtual Account", "VA Transfer", dsb.
+    # Urutan pengecekan: dari yang PALING SPESIFIK ke umum.
 
-    # Section keywords - ordered from most specific to least specific
-    # to ensure exact matching (e.g., "Transfer VA Prima" before "Transfer VA")
-    section_keywords = [
-        "Interbank Transfer via BI FAST",
-        "Transfer VA Prima",
-        "Transfer VA BI FAST",
-        "Balance Services",
-        "Intrabank Transfer",
-        "Interbank Transfer",
-        "RTGS Transfer",
-        "SKNBI Transfer",
-        "Transfer VA",
-    ]
+    has_bifast = ("bi fast" in t) or ("bifast" in t) or ("bi-fast" in t)
+    has_prima = "prima" in t
+    # "va" sebagai kata utuh, atau frasa "virtual account"
+    has_va = ("virtual account" in t) or bool(re.search(r"\bva\b", t))
 
-    for keyword in section_keywords:
-        # Check in both kolom B and kolom C
-        if keyword.lower() in kategori_tes.lower() or keyword.lower() in nama_modul.lower():
-            # For "Transfer VA" (without Prima/BI FAST), we need exact matching
-            # to avoid matching "Transfer VA Prima" or "Transfer VA BI FAST"
-            if keyword == "Transfer VA":
-                # Make sure neither kolom B nor kolom C contains "Prima" or "BI FAST"
-                combined_lower = text_to_check.lower()
-                if "prima" in combined_lower or "bi fast" in combined_lower:
-                    continue
-            elif keyword == "Interbank Transfer":
-                # Make sure it's not "Interbank Transfer via BI FAST"
-                combined_lower = text_to_check.lower()
-                if "bi fast" in combined_lower or "via bi" in combined_lower:
-                    continue
-            return keyword
+    # 1) Virtual Account - varian (paling spesifik dulu)
+    if has_va and has_prima:
+        return "Transfer VA Prima"
+    if has_va and has_bifast:
+        return "Transfer VA BI FAST"
+    if has_va:
+        return "Transfer VA"
+
+    # 2) Interbank - varian
+    if "interbank" in t and has_bifast:
+        return "Interbank Transfer via BI FAST"
+    if "interbank" in t:
+        return "Interbank Transfer"
+
+    # 3) Section lain (kata kunci inti)
+    if "balance" in t:
+        return "Balance Services"
+    if "intrabank" in t:
+        return "Intrabank Transfer"
+    if "rtgs" in t:
+        return "RTGS Transfer"
+    if "sknbi" in t or re.search(r"\bskn\b", t):
+        return "SKNBI Transfer"
 
     return None
 
@@ -303,64 +307,110 @@ def read_uat_script(filepath):
 # ============================================================
 
 import json
-import re
 
 
-# Penanda blok yang dikenali di kolom Remarks. Mendukung 2 format sumber:
-#   Format A (mis. Intrabank): "URL:", "Headers:", "Request Body:", "Response:"
-#   Format B (mis. Balance):   "Request URL:", "Request headers:",
-#                              "Request body:", "Response body:"
-# Setiap entri: (nama_kanonik, regex penanda)
-_BLOCK_MARKERS = [
-    ("url", r"(?:request\s+)?url(?:\s+endpoint)?\s*:"),
-    ("headers", r"(?:request\s+)?head(?:er|ers)(?:\s+request)?\s*:"),
-    ("request_body", r"request\s*body\s*:"),
-    ("response", r"response(?:\s*body)?\s*:"),
-]
+# Parser Remarks dibuat FLEKSIBEL: hanya berpatokan pada KATA KUNCI inti
+# (url / header / request / response), tidak terpaku pada kata pengiring.
+# Jadi semua variasi mitra dikenali, contoh:
+#   URL:  |  URL Endpoint:  |  Request URL:  |  URL Request:
+#   Headers:  |  Header:  |  Header Request:  |  Request headers:
+#   Request Body:  |  Request body:  |  Body:  |  Payload:
+#   Response:  |  Response Body:  |  Response body:
 
-# Regex gabungan untuk menemukan SEMUA penanda di mana saja (termasuk yang
-# menempel di tengah baris, contoh: "}Response body:").
-_MARKER_REGEX = re.compile(
-    r"(?im)(" + "|".join(m[1] for m in _BLOCK_MARKERS) + r")"
+# Batas panjang sebuah baris agar masih dianggap "label" (bukan isi data).
+_LABEL_MAX_LEN = 40
+
+# Penanda blok yang kadang MENEMPEL di tengah/akhir baris (mis. "}Response body:").
+# Kita sisipkan newline sebelum penanda ini agar terbaca sebagai label terpisah.
+_INLINE_MARKER_REGEX = re.compile(
+    r"(?i)(?<=[}\]])"
+    r"(?=(?:request|url|endpoint|header|headers|body|payload|response)"
+    r"(?:[ \t]+\w+){0,2}[ \t]*:)"
 )
 
 
-def _classify_marker(marker_text):
-    """Kembalikan nama kanonik blok dari teks penanda yang cocok."""
-    t = marker_text.strip().lower()
-    # Urutan pengecekan penting: 'request body' & 'response body' sebelum yang umum
-    if re.match(r"request\s*body\s*:", t):
-        return "request_body"
-    if re.match(r"response(?:\s*body)?\s*:", t):
-        return "response"
-    if re.match(r"(?:request\s+)?url(?:\s+endpoint)?\s*:", t):
-        return "url"
-    if re.match(r"(?:request\s+)?head(?:er|ers)(?:\s+request)?\s*:", t):
-        return "headers"
-    return None
+def _normalize_inline_markers(text):
+    """
+    Sisipkan newline sebelum penanda blok yang menempel di akhir baris
+    sebelumnya, contoh: '...}Response body: {...}' -> '...}\nResponse body: {...}'.
+    Ini membuat parser per-baris dapat mengenalinya sebagai label.
+    """
+    return _INLINE_MARKER_REGEX.sub("\n", text)
+
+
+def _classify_label(line):
+    """
+    Klasifikasikan sebuah baris label penanda ke salah satu blok:
+    'url', 'headers', 'request_body', 'response'. Mengembalikan (nama, sisa_teks)
+    di mana sisa_teks adalah teks setelah tanda ':' pada baris yang sama
+    (biasanya kosong, tapi kadang URL menempel: "URL: https://...").
+
+    Aturan (urut prioritas agar tidak salah klasifikasi):
+      1. mengandung "response"           -> response
+      2. mengandung "url" atau "endpoint"-> url
+      3. mengandung "header"             -> headers
+      4. mengandung "request"/"body"/"payload" -> request_body
+
+    Baris hanya dianggap label jika:
+      - mengandung tanda ':'
+      - bagian SEBELUM ':' pendek (<= _LABEL_MAX_LEN) dan tidak berisi '{'/'['
+        (supaya baris data JSON tidak salah dikira label).
+
+    Jika bukan label, kembalikan (None, None).
+    """
+    if ":" not in line:
+        return (None, None)
+
+    before, after = line.split(":", 1)
+    key = before.strip().lower()
+
+    # Tolak kalau bagian sebelum ':' terlalu panjang atau tampak seperti data
+    if len(key) == 0 or len(key) > _LABEL_MAX_LEN:
+        return (None, None)
+    if "{" in key or "[" in key or '"' in key:
+        return (None, None)
+
+    if "response" in key:
+        return ("response", after.strip())
+    if "url" in key or "endpoint" in key:
+        return ("url", after.strip())
+    if "header" in key:
+        return ("headers", after.strip())
+    if "request" in key or "body" in key or "payload" in key:
+        return ("request_body", after.strip())
+
+    return (None, None)
 
 
 def _parse_remarks_blocks(text):
     """
     Pecah isi Remarks menjadi dict blok: {url, headers, request_body, response}.
 
-    Menggunakan posisi tiap penanda (di mana saja dalam teks) sehingga tahan
-    terhadap variasi format, termasuk penanda yang menempel di akhir baris
-    sebelumnya (mis. "}Response body:").
+    Bekerja per-baris: cari baris yang merupakan LABEL (via _classify_label),
+    lalu kumpulkan semua baris berikutnya sebagai isi blok sampai ketemu label
+    berikutnya. Pendekatan berbasis kata kunci ini tahan terhadap variasi
+    penamaan antar mitra.
     """
-    blocks = {}
-    matches = list(_MARKER_REGEX.finditer(text))
-    if not matches:
-        return blocks
+    lines = text.split("\n")
 
-    for i, m in enumerate(matches):
-        name = _classify_marker(m.group(0))
-        if name is None:
-            continue
-        start = m.end()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        content = text[start:end].strip()
-        # Jangan timpa blok yang sudah terisi (ambil kemunculan pertama)
+    # Temukan indeks baris yang merupakan label + jenis bloknya
+    label_positions = []  # list of (idx, name, inline_rest)
+    for idx, line in enumerate(lines):
+        name, rest = _classify_label(line)
+        if name is not None:
+            label_positions.append((idx, name, rest))
+
+    blocks = {}
+    for i, (idx, name, inline_rest) in enumerate(label_positions):
+        start = idx + 1
+        end = label_positions[i + 1][0] if i + 1 < len(label_positions) else len(lines)
+        body_lines = lines[start:end]
+        content = "\n".join(body_lines).strip()
+        # Jika ada teks menempel di baris label (mis. "URL: https://..."),
+        # gabungkan di depan.
+        if inline_rest:
+            content = (inline_rest + ("\n" + content if content else "")).strip()
+        # Ambil kemunculan pertama tiap blok
         if name not in blocks and content:
             blocks[name] = content
 
@@ -392,7 +442,7 @@ def _format_headers(headers_raw):
     pairs = []
     raw = headers_raw.strip()
 
-    # Coba parse sebagai JSON object dulu (Bentuk B)
+    # Coba parse sebagai JSON dulu (bisa object ATAU array of strings)
     parsed = None
     try:
         parsed = json.loads(raw)
@@ -400,22 +450,32 @@ def _format_headers(headers_raw):
         parsed = None
 
     if isinstance(parsed, dict):
+        # Bentuk B: {"Authorization": ["Bearer xxx"], ...}
         for key, val in parsed.items():
             if isinstance(val, list):
                 val = ", ".join(str(v) for v in val)
             pairs.append(f'{key}={val}')
+    elif isinstance(parsed, list):
+        # Bentuk C: ["Content-Type=application/json", "Authorization=Bearer xxx"]
+        # Item sudah "Key=Value" -> pakai apa adanya (jangan bungkus kutip lagi).
+        for item in parsed:
+            pairs.append(str(item))
     else:
-        # Bentuk A: parsing per baris
+        # Bentuk A: parsing per baris polos
         for line in raw.split("\n"):
             s = line.strip().rstrip(",")
             if not s or s in ("[", "]", "{", "}"):
                 continue
-            if ":" in s:
+            # Buang kutip pembungkus di sekeliling item bila ada
+            # (mis. baris '"Content-Type=application/json"').
+            if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+                s = s[1:-1]
+            if "=" in s and ":" not in s.split("=", 1)[0]:
+                # Sudah format Key=Value
+                pairs.append(s)
+            elif ":" in s:
                 key, val = s.split(":", 1)
                 pairs.append(f'{key.strip().strip(chr(34))}={val.strip().strip(chr(34))}')
-            elif "=" in s:
-                key, val = s.split("=", 1)
-                pairs.append(f'{key.strip()}={val.strip()}')
             else:
                 pairs.append(s)
 
@@ -511,6 +571,7 @@ def split_request_response(remarks_text):
         return "", ""
 
     text = remarks_text.replace("\r\n", "\n").replace("\r", "\n")
+    text = _normalize_inline_markers(text)
 
     blocks = _parse_remarks_blocks(text)
 
@@ -602,11 +663,141 @@ def map_result_value(hasil_aktual):
     return hasil_aktual
 
 
-def map_uat_to_lampiran(uat_data):
+def _is_valid_json(raw):
+    """True jika teks bisa di-parse sebagai JSON."""
+    raw = (raw or "").strip()
+    if not raw:
+        return False
+    try:
+        json.loads(raw)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def detect_anomalies(row_data):
+    """
+    Deteksi kondisi ABNORMAL pada satu baris UAT agar bisa ditampilkan sebagai
+    peringatan (tidak mengubah data apa pun - hanya memberi tahu).
+
+    PENTING: fungsi ini TIDAK mengubah data apa pun. Hanya melaporkan lokasi
+    potensi masalah agar bisa di-cross-check manual oleh pengguna.
+
+    Kondisi yang dideteksi (khusus baris dengan Hasil Aktual = "Berhasil"):
+      1. Remarks kosong padahal hasil Berhasil
+      2. Ada bagian log yang hilang (URL / Header / Request Body / Response)
+      3. Request Body atau Response Body bukan JSON valid (syntax rusak)
+      4. Response Body kosong padahal hasil Berhasil
+      5. Ada item Header yang tidak berbentuk "Key=Value" (tidak wajar)
+
+    Args:
+        row_data: dict baris UAT (punya 'nomor_kasus_tes', 'hasil_aktual', 'remarks')
+
+    Returns:
+        list[str]: daftar pesan peringatan (kosong jika tidak ada anomali)
+    """
+    warnings = []
+    kasus = row_data.get('nomor_kasus_tes', '?')
+    hasil = str(row_data.get('hasil_aktual', '')).strip().lower()
+    remarks = row_data.get('remarks', '') or ""
+
+    # Hanya periksa baris yang seharusnya punya log (Berhasil)
+    if hasil != "berhasil":
+        return warnings
+
+    if not remarks.strip() or remarks.strip().lower() == "none":
+        warnings.append(f"Kasus {kasus}: hasil 'Berhasil' tetapi kolom Remarks kosong.")
+        return warnings
+
+    text = remarks.replace("\r\n", "\n").replace("\r", "\n")
+    text = _normalize_inline_markers(text)
+    blocks = _parse_remarks_blocks(text)
+
+    # (2) Bagian yang hilang
+    if not blocks.get("url", "").strip():
+        warnings.append(f"Kasus {kasus}: bagian URL tidak ditemukan pada Remarks.")
+    if not blocks.get("headers", "").strip():
+        warnings.append(f"Kasus {kasus}: bagian Header tidak ditemukan pada Remarks.")
+    if not blocks.get("request_body", "").strip():
+        warnings.append(f"Kasus {kasus}: bagian Request Body tidak ditemukan pada Remarks.")
+    if not blocks.get("response", "").strip():
+        warnings.append(f"Kasus {kasus}: bagian Response tidak ditemukan pada Remarks.")
+
+    # (3) JSON tidak valid (hanya cek jika bagiannya ada)
+    body_raw = blocks.get("request_body", "")
+    if body_raw.strip() and not _is_valid_json(body_raw):
+        warnings.append(
+            f"Kasus {kasus}: Request Body bukan JSON valid (format/syntax) - mohon cek manual."
+        )
+
+    resp_raw = blocks.get("response", "")
+    if resp_raw.strip():
+        if not _is_valid_json(resp_raw):
+            warnings.append(
+                f"Kasus {kasus}: Response Body bukan JSON valid (format/syntax) - mohon cek manual."
+            )
+    else:
+        # (4) Response kosong padahal Berhasil
+        warnings.append(
+            f"Kasus {kasus}: hasil 'Berhasil' tetapi Response Body kosong - mohon cek manual."
+        )
+
+    # (5) Header ada item yang tidak berbentuk Key=Value
+    headers_raw = blocks.get("headers", "")
+    if headers_raw.strip():
+        for item in _iter_header_items(headers_raw):
+            # Item wajar bila mengandung pemisah ':' atau '=' antara key & value
+            if ("=" not in item) and (":" not in item):
+                preview = item[:40] + ("..." if len(item) > 40 else "")
+                warnings.append(
+                    f"Kasus {kasus}: ada Header tidak wajar (bukan Key=Value): '{preview}' - mohon cek manual."
+                )
+                break  # cukup satu peringatan header per kasus
+
+    return warnings
+
+
+def _iter_header_items(headers_raw):
+    """
+    Kembalikan daftar item header (string) dari blok Header mentah, mendukung
+    JSON object, JSON array, maupun baris polos. Hanya untuk PEMERIKSAAN
+    (tidak mengubah data).
+    """
+    raw = headers_raw.strip()
+    items = []
+    parsed = None
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        parsed = None
+
+    if isinstance(parsed, dict):
+        for k, v in parsed.items():
+            if isinstance(v, list):
+                v = ", ".join(str(x) for x in v)
+            items.append(f"{k}: {v}")
+    elif isinstance(parsed, list):
+        items = [str(x) for x in parsed]
+    else:
+        for line in raw.split("\n"):
+            s = line.strip().rstrip(",")
+            if not s or s in ("[", "]", "{", "}"):
+                continue
+            if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+                s = s[1:-1]
+            items.append(s)
+    return items
+
+
+def map_uat_to_lampiran(uat_data, collect_warnings=False):
     """
     Map data dari UAT Script ke struktur Lampiran 7C.
 
     Mengimplementasikan logika "fill empty only" untuk section yang di-share.
+
+    Args:
+        uat_data: Dict hasil dari read_uat_script()
+        collect_warnings: jika True, kembalikan tuple (lampiran_data, warnings)
 
     Args:
         uat_data: Dict hasil dari read_uat_script()
@@ -632,6 +823,8 @@ def map_uat_to_lampiran(uat_data):
     lampiran_data = {}
     for section_name, count in LAMPIRAN_SECTIONS:
         lampiran_data[section_name] = [None] * count
+
+    warnings = []
 
     # Proses mapping berdasarkan urutan prioritas
     for uat_section, _, target_section, fill_empty_only in UAT_TO_LAMPIRAN_MAPPING:
@@ -686,6 +879,9 @@ def map_uat_to_lampiran(uat_data):
                 # dan Response (isi setelah penanda "Response:")
                 request_content, response_content = split_request_response(remarks_text)
 
+            # Kumpulkan peringatan anomali (tidak mengubah data)
+            warnings.extend(detect_anomalies(row_data))
+
             lampiran_data[target_section][row_idx] = {
                 'no': sub_num,
                 'service': service,
@@ -697,6 +893,8 @@ def map_uat_to_lampiran(uat_data):
                 'notes': notes,
             }
 
+    if collect_warnings:
+        return lampiran_data, warnings
     return lampiran_data
 
 
@@ -996,9 +1194,10 @@ def convert_uat_to_lampiran(source):
         source: path file (str/Path) ATAU objek file-like/bytes berisi .xlsx
 
     Returns:
-        tuple: (doc, stats)
-            doc   : docx.Document hasil konversi (belum disimpan)
-            stats : dict {section_name: jumlah_baris_terisi} untuk ringkasan
+        tuple: (doc, stats, warnings)
+            doc      : docx.Document hasil konversi (belum disimpan)
+            stats    : dict {section_name: jumlah_baris_terisi} untuk ringkasan
+            warnings : list[str] daftar peringatan anomali (bisa kosong)
     """
     import io
 
@@ -1008,14 +1207,14 @@ def convert_uat_to_lampiran(source):
         source = io.BytesIO(source)
 
     uat_data = read_uat_script(source)
-    lampiran_data = map_uat_to_lampiran(uat_data)
+    lampiran_data, warnings = map_uat_to_lampiran(uat_data, collect_warnings=True)
 
     stats = {}
     for section_name, rows in lampiran_data.items():
         stats[section_name] = sum(1 for r in rows if r is not None)
 
     doc = build_lampiran_document(lampiran_data)
-    return doc, stats
+    return doc, stats, warnings
 
 
 def convert_uat_to_lampiran_bytes(source):
@@ -1024,15 +1223,15 @@ def convert_uat_to_lampiran_bytes(source):
     bentuk bytes (siap dikirim sebagai unduhan di aplikasi web).
 
     Returns:
-        tuple: (docx_bytes, stats)
+        tuple: (docx_bytes, stats, warnings)
     """
     import io
 
-    doc, stats = convert_uat_to_lampiran(source)
+    doc, stats, warnings = convert_uat_to_lampiran(source)
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
-    return buffer.getvalue(), stats
+    return buffer.getvalue(), stats, warnings
 
 
 # ============================================================
