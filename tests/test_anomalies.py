@@ -108,3 +108,33 @@ class TestDeteksiTambahan:
             'Response:\n{"responseCode":"200"}'
         )
         assert detect_anomalies(_row("4.4", "Berhasil", remarks)) == []
+
+
+
+class TestDisplayNoPenomoranLampiran:
+    """
+    Peringatan harus memakai nomor kasus SESUAI penomoran Lampiran 7C
+    (parameter display_no), bukan nomor asli file UAT. Penting agar laporan
+    ke ASPI konsisten dengan kolom No pada dokumen.
+    """
+
+    def test_display_no_dipakai_di_pesan(self):
+        # Nomor asli 7.11, tapi di Lampiran 7C tampil sebagai 6.11
+        w = detect_anomalies(_row("7.11", "Berhasil", ""), display_no="6.11")
+        assert len(w) == 1
+        assert "6.11" in w[0]
+        assert "7.11" not in w[0]
+
+    def test_tanpa_display_no_pakai_nomor_asli(self):
+        # Backward compatible: tanpa display_no -> pakai nomor_kasus_tes
+        w = detect_anomalies(_row("7.11", "Berhasil", ""))
+        assert "7.11" in w[0]
+
+    def test_display_no_pada_response_invalid(self):
+        remarks = (
+            "URL:\nhttps://x\n\nHeaders:\nA: b\n\n"
+            "Request Body:\n{\"a\":1}\n\nResponse:\n{ini bukan json}"
+        )
+        w = detect_anomalies(_row("7.2", "Berhasil", remarks), display_no="6.2")
+        assert any("6.2" in x for x in w)
+        assert all("7.2" not in x for x in w)

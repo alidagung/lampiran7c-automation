@@ -675,7 +675,7 @@ def _is_valid_json(raw):
         return False
 
 
-def detect_anomalies(row_data):
+def detect_anomalies(row_data, display_no=None):
     """
     Deteksi kondisi ABNORMAL pada satu baris UAT agar bisa ditampilkan sebagai
     peringatan (tidak mengubah data apa pun - hanya memberi tahu).
@@ -692,12 +692,16 @@ def detect_anomalies(row_data):
 
     Args:
         row_data: dict baris UAT (punya 'nomor_kasus_tes', 'hasil_aktual', 'remarks')
+        display_no: (opsional) nomor kasus SESUAI penomoran Lampiran 7C yang
+            tampil di dokumen (mis. "6.2"). Jika diberikan, nomor inilah yang
+            dipakai pada pesan peringatan agar konsisten dengan tabel. Jika
+            None, dipakai 'nomor_kasus_tes' asli dari file UAT.
 
     Returns:
         list[str]: daftar pesan peringatan (kosong jika tidak ada anomali)
     """
     warnings = []
-    kasus = row_data.get('nomor_kasus_tes', '?')
+    kasus = display_no if display_no is not None else row_data.get('nomor_kasus_tes', '?')
     hasil = str(row_data.get('hasil_aktual', '')).strip().lower()
     remarks = row_data.get('remarks', '') or ""
 
@@ -825,6 +829,11 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False):
         lampiran_data[section_name] = [None] * count
 
     warnings = []
+    # Tunda pengumpulan peringatan: simpan (target_section, sub_num, row_data)
+    # dulu. Setelah semua mapping selesai, kita tahu section mana saja yang
+    # terisi -> prefix Lampiran 7C bisa dihitung akurat, lalu peringatan dibuat
+    # dengan nomor kasus SESUAI penomoran dokumen (mis. VA -> 6.x).
+    pending_anomaly_checks = []
 
     # Proses mapping berdasarkan urutan prioritas
     for uat_section, _, target_section, fill_empty_only in UAT_TO_LAMPIRAN_MAPPING:
@@ -883,8 +892,8 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False):
                 # dan Response (isi setelah penanda "Response:")
                 request_content, response_content = split_request_response(remarks_text)
 
-            # Kumpulkan peringatan anomali (tidak mengubah data)
-            warnings.extend(detect_anomalies(row_data))
+            # Tunda pemeriksaan anomali sampai prefix Lampiran 7C diketahui.
+            pending_anomaly_checks.append((target_section, sub_num, row_data))
 
             lampiran_data[target_section][row_idx] = {
                 'no': sub_num,
@@ -897,6 +906,27 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False):
                 'result': result_value,
                 'notes': notes,
             }
+
+    # Hitung prefix Lampiran 7C per section BERDASARKAN urutan section yang
+    # benar-benar terisi (logika identik dengan render dokumen). Section tanpa
+    # data tidak ditampilkan sehingga prefix bergeser. Contoh: bila Interbank
+    # BI FAST (4.x sumber) dilewati, maka RTGS menjadi section ke-4 -> prefix 4.
+    section_prefix_map = {}
+    prefix = 0
+    for section_name, _count in LAMPIRAN_SECTIONS:
+        rows = lampiran_data.get(section_name, [])
+        if any(r is not None for r in rows):
+            prefix += 1
+            section_prefix_map[section_name] = prefix
+
+    # Bangun peringatan dengan nomor kasus SESUAI penomoran Lampiran 7C.
+    for target_section, sub_num, row_data in pending_anomaly_checks:
+        section_prefix = section_prefix_map.get(target_section)
+        if section_prefix is None:
+            # Section ini akhirnya tidak ditampilkan -> lewati peringatannya.
+            continue
+        display_no = f"{section_prefix}.{sub_num}"
+        warnings.extend(detect_anomalies(row_data, display_no=display_no))
 
     if collect_warnings:
         return lampiran_data, warnings
