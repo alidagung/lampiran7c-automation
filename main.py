@@ -1134,11 +1134,15 @@ def build_lampiran_document(lampiran_data):
                     run.font.name = FONT_NAME
 
         # Data rows - hanya baris yang benar-benar dites (skip baris kosong)
-        # Kolom No menampilkan nomor kasus LENGKAP, mis. "1.1", "2.12", "7.33".
+        # Kolom No menampilkan nomor kasus dengan PREFIX = urutan section di
+        # Lampiran 7C (1..6), sedangkan sub-nomor mengikuti nomor kasus asli.
+        # Contoh: RTGS Transfer adalah section ke-4 yang tampil, maka barisnya
+        # dinomori 4.1, 4.2, ... meskipun di file UAT bernomor 5.x.
+        section_prefix = section_idx + 1
         for row_data in filled_rows:
             row_cells = table.add_row().cells
             values = [
-                str(row_data.get('no_full', row_data['no'])),
+                f"{section_prefix}.{row_data['no']}",
                 row_data['service'],
                 row_data['scenario'],
                 row_data['expected_result'],
