@@ -866,11 +866,15 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False):
 
             # Cek kondisi khusus
             if hasil_aktual.lower().strip() in ("tidak dites", "belum dites"):
-                # Tidak dites / Belum dites: baris tetap ditampilkan (Result N/A),
-                # tetapi kolom Request, Response, dan Notes dikosongkan.
-                notes = ""
+                # Tidak dites / Belum dites: baris tetap ditampilkan (Result N/A).
+                # Kolom Request & Response dikosongkan, dan isi Remark dipindahkan
+                # ke kolom Notes (apa adanya).
                 request_content = ""
                 response_content = ""
+                if remarks_text and remarks_text.strip().lower() != "none":
+                    notes = remarks_text.strip()
+                else:
+                    notes = ""
             elif not remarks_text or remarks_text.lower() == "none":
                 # Remarks kosong: Request dan Response kosong
                 notes = ""

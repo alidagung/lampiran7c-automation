@@ -252,13 +252,14 @@ Response:
         assert result["API Balance Inquiry"][0] is not None
         assert result["API Balance Inquiry"][0]['request'] == ""
         assert result["API Balance Inquiry"][0]['response'] == ""
-        assert result["API Balance Inquiry"][0]['notes'] == ""
+        # Remark dipindah ke Notes untuk baris "Tidak dites"
+        assert result["API Balance Inquiry"][0]['notes'] == "Catatan dari remarks"
         # Result mapped: "Tidak dites" -> "N/A"
         assert result["API Balance Inquiry"][0]['result'] == "N/A"
 
     def test_tidak_dites_empty_remarks(self):
         """Test handling ketika Hasil Aktual = 'Tidak dites' dan Remarks kosong.
-        Notes tetap dikosongkan."""
+        Notes tetap kosong karena tidak ada Remark."""
         uat_data = {
             "Balance Services": [
                 self._make_row("1.1", hasil_aktual="Tidak dites", remarks=""),
@@ -274,8 +275,8 @@ Response:
 
     def test_belum_dites_handling(self):
         """Test handling ketika Hasil Aktual = 'Belum dites'.
-        Sama seperti 'Tidak dites': ditampilkan dengan Result=N/A dan
-        kolom Request/Response/Notes kosong."""
+        Sama seperti 'Tidak dites': Result=N/A, Request/Response kosong,
+        dan Remark dipindah ke Notes."""
         uat_data = {
             "Balance Services": [
                 self._make_row("1.1", hasil_aktual="Belum dites", remarks="apapun isinya"),
@@ -288,7 +289,7 @@ Response:
         assert row is not None
         assert row['request'] == ""
         assert row['response'] == ""
-        assert row['notes'] == ""
+        assert row['notes'] == "apapun isinya"
         assert row['result'] == "N/A"
 
     def test_berhasil_without_remarks(self):
