@@ -1067,28 +1067,29 @@ def build_lampiran_document(lampiran_data):
         doc.add_paragraph("Tidak ada data hasil UAT yang ditemukan pada UAT Script.")
         return doc
 
+    # Judul dokumen (format resmi Lampiran 7.C) - HANYA DITAMPILKAN SEKALI
+    # di halaman 1 (sebelum section pertama), tidak diulang tiap section.
+    title1 = doc.add_paragraph()
+    title1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run1 = title1.add_run("Lampiran 7.C")
+    run1.font.name = FONT_NAME
+    run1.font.size = Pt(12)
+    run1.font.bold = True
+
+    title2 = doc.add_paragraph()
+    title2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run2 = title2.add_run("Skenario dan Hasil Uji Fungsionalitas")
+    run2.font.name = FONT_NAME
+    run2.font.size = Pt(11)
+    run2.font.bold = True
+
+    doc.add_paragraph()
+
     # Buat setiap section yang ada datanya
     for section_idx, (section_name, filled_rows) in enumerate(sections_to_render):
         # Tambah page break sebelum section (kecuali section pertama)
         if section_idx > 0:
             doc.add_page_break()
-
-        # Judul dokumen (format resmi Lampiran 7.C)
-        title1 = doc.add_paragraph()
-        title1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run1 = title1.add_run("Lampiran 7.C")
-        run1.font.name = FONT_NAME
-        run1.font.size = Pt(12)
-        run1.font.bold = True
-
-        title2 = doc.add_paragraph()
-        title2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run2 = title2.add_run("Skenario dan Hasil Uji Fungsionalitas")
-        run2.font.name = FONT_NAME
-        run2.font.size = Pt(11)
-        run2.font.bold = True
-
-        doc.add_paragraph()
 
         # Info penyedia & layanan - paragraf rapat (single line, spacing 0pt)
         info_lines = [
@@ -1132,10 +1133,11 @@ def build_lampiran_document(lampiran_data):
                     run.font.name = FONT_NAME
 
         # Data rows - hanya baris yang benar-benar dites (skip baris kosong)
-        for display_no, row_data in enumerate(filled_rows, start=1):
+        # Kolom No mengikuti nomor kasus asli (sub-number), mis. 1.1->1, 2.12->12.
+        for row_data in filled_rows:
             row_cells = table.add_row().cells
             values = [
-                str(display_no),
+                str(row_data['no']),
                 row_data['service'],
                 row_data['scenario'],
                 row_data['expected_result'],
