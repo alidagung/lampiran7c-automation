@@ -888,6 +888,7 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False):
 
             lampiran_data[target_section][row_idx] = {
                 'no': sub_num,
+                'no_full': row_data['nomor_kasus_tes'],
                 'service': service,
                 'scenario': row_data.get('langkah_tes', '') or f"Skenario {row_data['nomor_kasus_tes']}",
                 'expected_result': row_data.get('hasil_diharapkan', ''),
@@ -1133,11 +1134,11 @@ def build_lampiran_document(lampiran_data):
                     run.font.name = FONT_NAME
 
         # Data rows - hanya baris yang benar-benar dites (skip baris kosong)
-        # Kolom No mengikuti nomor kasus asli (sub-number), mis. 1.1->1, 2.12->12.
+        # Kolom No menampilkan nomor kasus LENGKAP, mis. "1.1", "2.12", "7.33".
         for row_data in filled_rows:
             row_cells = table.add_row().cells
             values = [
-                str(row_data['no']),
+                str(row_data.get('no_full', row_data['no'])),
                 row_data['service'],
                 row_data['scenario'],
                 row_data['expected_result'],
