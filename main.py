@@ -96,9 +96,21 @@ COL_TANGGAL = 9
 COL_JENIS_SCRIPT = 10
 COL_PELAKSANA = 11
 
-# Definisi 6 section API di Lampiran 7C
-# Format: (nama_lampiran, jumlah_skenario)
-LAMPIRAN_SECTIONS = [
+# ------------------------------------------------------------
+# PROFIL PRODUK
+# ------------------------------------------------------------
+# Tool ini mendukung LEBIH DARI SATU produk (mis. Fund Transfer/VA dan QRIS).
+# Tiap produk punya:
+#   - sections : daftar (nama_lampiran, jumlah_baris) section di Lampiran 7C
+#   - mapping  : (header_uat, prefix, target_section, is_fill_empty_only)
+#   - renumber : True  -> kolom No dinomori ULANG mengikuti urutan section yang
+#                          tampil di Lampiran 7C (mis. FT/VA: RTGS jadi 4.x)
+#                False -> kolom No PAKAI nomor kasus ASLI dari script apa adanya
+#                          (mis. QRIS: 1.x, 2.x, 3.x)
+# Produk dipilih otomatis lewat detect_product() berdasarkan isi file.
+
+# --- Produk: Fund Transfer / Virtual Account (default, perilaku lama) ---
+FT_VA_SECTIONS = [
     ("API Balance Inquiry", 11),
     ("Intrabank Transfer", 12),
     ("Interbank Transfer", 13),
@@ -107,9 +119,7 @@ LAMPIRAN_SECTIONS = [
     ("API Virtual Account", 33),
 ]
 
-# Mapping dari section header di UAT Script ke section di Lampiran 7C
-# Format: (header_uat, skenario_prefix, target_lampiran_section, is_fill_empty_only)
-UAT_TO_LAMPIRAN_MAPPING = [
+FT_VA_MAPPING = [
     ("Balance Services", "1", "API Balance Inquiry", False),
     ("Intrabank Transfer", "2", "Intrabank Transfer", False),
     ("Interbank Transfer", "3", "Interbank Transfer", False),
@@ -122,6 +132,43 @@ UAT_TO_LAMPIRAN_MAPPING = [
     # (skenario 9.x) SENGAJA TIDAK dipindahkan ke Lampiran 7C sesuai keputusan
     # bisnis (sama seperti Interbank Transfer via BI FAST).
 ]
+
+# --- Produk: QRIS ---
+# Hanya 3 section yang dipindah ke Lampiran 7C. Section "PENGECEKAN MUTASI DAN
+# JURNAL" (skenario 4.x-10.x) SENGAJA TIDAK dipindahkan sesuai keputusan bisnis.
+# Kolom No memakai nomor kasus ASLI dari script (renumber=False).
+QRIS_SECTIONS = [
+    ("Balance Inquiry", 11),
+    ("API Transaction History List", 8),
+    ("QR MPM", 19),
+]
+
+QRIS_MAPPING = [
+    ("Balance Services", "1", "Balance Inquiry", False),
+    ("API Transaction History List", "2", "API Transaction History List", False),
+    ("QR MPM", "3", "QR MPM", False),
+    # Catatan: "PENGECEKAN MUTASI DAN JURNAL" (skenario 4.x-10.x) SENGAJA TIDAK
+    # dipindahkan ke Lampiran 7C sesuai keputusan bisnis.
+]
+
+# Registry profil produk
+PRODUCT_PROFILES = {
+    "FT_VA": {
+        "sections": FT_VA_SECTIONS,
+        "mapping": FT_VA_MAPPING,
+        "renumber": True,
+    },
+    "QRIS": {
+        "sections": QRIS_SECTIONS,
+        "mapping": QRIS_MAPPING,
+        "renumber": False,
+    },
+}
+
+# Backward compatibility: konstanta lama tetap menunjuk ke profil FT/VA agar
+# kode & test yang mengimpor nama ini tidak rusak.
+LAMPIRAN_SECTIONS = FT_VA_SECTIONS
+UAT_TO_LAMPIRAN_MAPPING = FT_VA_MAPPING
 
 
 
@@ -189,7 +236,19 @@ def detect_section_header(row):
     if "interbank" in t:
         return "Interbank Transfer"
 
-    # 3) Section lain (kata kunci inti)
+    # 3) Section khusus QRIS
+    #    - "QR MPM" (Merchant Presented Mode) -> section QR MPM
+    #    - "Transaction History List" -> riwayat transaksi
+    #    - "Pengecekan Mutasi dan Jurnal" -> dikenali agar terkelompok, namun
+    #      SENGAJA tidak dipetakan ke Lampiran 7C (lihat QRIS_MAPPING).
+    if "qr mpm" in t or re.search(r"\bmpm\b", t):
+        return "QR MPM"
+    if "transaction history" in t or "history list" in t:
+        return "API Transaction History List"
+    if ("pengecekan mutasi" in t) or ("mutasi dan jurnal" in t) or ("mutasi & jurnal" in t):
+        return "PENGECEKAN MUTASI DAN JURNAL"
+
+    # 4) Section lain (kata kunci inti)
     if "balance" in t:
         return "Balance Services"
     if "intrabank" in t:
@@ -200,6 +259,46 @@ def detect_section_header(row):
         return "SKNBI Transfer"
 
     return None
+
+
+def detect_product(uat_data):
+    """
+    Tentukan profil produk (kunci di PRODUCT_PROFILES) berdasarkan section yang
+    ditemukan di UAT Script.
+
+    Aturan (FT/VA diprioritaskan karena penandanya paling khas):
+      - Jika ada section khas FT/VA ("Transfer VA", "RTGS Transfer",
+        "SKNBI Transfer", "Interbank Transfer", "Intrabank Transfer") -> "FT_VA".
+      - Selain itu, jika ada section khas QRIS ("QR MPM" atau
+        "API Transaction History List") -> "QRIS".
+      - Default aman -> "FT_VA" (perilaku lama).
+
+    Catatan: "PENGECEKAN MUTASI DAN JURNAL" TIDAK dipakai sebagai penanda
+    produk apa pun karena section ini umum muncul di berbagai UAT Script
+    (baik FT/VA maupun QRIS), sehingga bukan pembeda yang andal.
+
+    Args:
+        uat_data: dict hasil read_uat_script() (kunci = nama section)
+
+    Returns:
+        str: kunci profil produk pada PRODUCT_PROFILES
+    """
+    sections = set(uat_data.keys())
+
+    # 1) FT/VA diprioritaskan (penanda kuat & spesifik)
+    ft_va_markers = {"Transfer VA", "Transfer VA Prima", "Transfer VA BI FAST",
+                     "RTGS Transfer", "SKNBI Transfer", "Interbank Transfer",
+                     "Interbank Transfer via BI FAST", "Intrabank Transfer"}
+    if sections & ft_va_markers:
+        return "FT_VA"
+
+    # 2) QRIS - penanda paling khas adalah "QR MPM"
+    qris_markers = {"QR MPM", "API Transaction History List"}
+    if sections & qris_markers:
+        return "QRIS"
+
+    # 3) Default: perilaku lama (FT/VA)
+    return "FT_VA"
 
 
 def read_uat_script(filepath):
@@ -793,7 +892,7 @@ def _iter_header_items(headers_raw):
     return items
 
 
-def map_uat_to_lampiran(uat_data, collect_warnings=False):
+def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
     """
     Map data dari UAT Script ke struktur Lampiran 7C.
 
@@ -802,9 +901,9 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False):
     Args:
         uat_data: Dict hasil dari read_uat_script()
         collect_warnings: jika True, kembalikan tuple (lampiran_data, warnings)
-
-    Args:
-        uat_data: Dict hasil dari read_uat_script()
+        profile: dict profil produk dari PRODUCT_PROFILES (punya 'sections',
+            'mapping', 'renumber'). Jika None, dipakai profil FT/VA (perilaku
+            lama) demi kompatibilitas.
 
     Returns:
         dict: {
@@ -823,9 +922,15 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False):
             ]
         }
     """
+    # Pilih profil produk (default: FT/VA demi kompatibilitas)
+    if profile is None:
+        profile = PRODUCT_PROFILES["FT_VA"]
+    sections_def = profile["sections"]
+    mapping_def = profile["mapping"]
+
     # Inisialisasi struktur Lampiran 7C dengan None untuk setiap row
     lampiran_data = {}
-    for section_name, count in LAMPIRAN_SECTIONS:
+    for section_name, count in sections_def:
         lampiran_data[section_name] = [None] * count
 
     warnings = []
@@ -836,13 +941,13 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False):
     pending_anomaly_checks = []
 
     # Proses mapping berdasarkan urutan prioritas
-    for uat_section, _, target_section, fill_empty_only in UAT_TO_LAMPIRAN_MAPPING:
+    for uat_section, _, target_section, fill_empty_only in mapping_def:
         if uat_section not in uat_data:
             continue
 
         rows = uat_data[uat_section]
         target_count = None
-        for sec_name, sec_count in LAMPIRAN_SECTIONS:
+        for sec_name, sec_count in sections_def:
             if sec_name == target_section:
                 target_count = sec_count
                 break
@@ -892,7 +997,7 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False):
                 # dan Response (isi setelah penanda "Response:")
                 request_content, response_content = split_request_response(remarks_text)
 
-            # Tunda pemeriksaan anomali sampai prefix Lampiran 7C diketahui.
+            # Tunda pemeriksaan anomali sampai penomoran final diketahui.
             pending_anomaly_checks.append((target_section, sub_num, row_data))
 
             lampiran_data[target_section][row_idx] = {
@@ -907,25 +1012,32 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False):
                 'notes': notes,
             }
 
+    renumber = profile.get("renumber", True)
+
     # Hitung prefix Lampiran 7C per section BERDASARKAN urutan section yang
     # benar-benar terisi (logika identik dengan render dokumen). Section tanpa
     # data tidak ditampilkan sehingga prefix bergeser. Contoh: bila Interbank
     # BI FAST (4.x sumber) dilewati, maka RTGS menjadi section ke-4 -> prefix 4.
     section_prefix_map = {}
     prefix = 0
-    for section_name, _count in LAMPIRAN_SECTIONS:
+    for section_name, _count in sections_def:
         rows = lampiran_data.get(section_name, [])
         if any(r is not None for r in rows):
             prefix += 1
             section_prefix_map[section_name] = prefix
 
     # Bangun peringatan dengan nomor kasus SESUAI penomoran Lampiran 7C.
+    #   - renumber=True  (FT/VA) : nomor = {prefix_section}.{sub_num}
+    #   - renumber=False (QRIS)  : nomor = nomor kasus ASLI dari script
     for target_section, sub_num, row_data in pending_anomaly_checks:
         section_prefix = section_prefix_map.get(target_section)
         if section_prefix is None:
             # Section ini akhirnya tidak ditampilkan -> lewati peringatannya.
             continue
-        display_no = f"{section_prefix}.{sub_num}"
+        if renumber:
+            display_no = f"{section_prefix}.{sub_num}"
+        else:
+            display_no = row_data['nomor_kasus_tes']
         warnings.extend(detect_anomalies(row_data, display_no=display_no))
 
     if collect_warnings:
@@ -1054,7 +1166,7 @@ def _write_cell_rich(cell, text):
             run.font.name = FONT_NAME
 
 
-def build_lampiran_document(lampiran_data):
+def build_lampiran_document(lampiran_data, profile=None):
     """
     Membangun dokumen Word Lampiran 7C dari data hasil mapping dan
     mengembalikan objek Document (tanpa menyimpan ke disk).
@@ -1063,10 +1175,18 @@ def build_lampiran_document(lampiran_data):
 
     Args:
         lampiran_data: Dict hasil dari map_uat_to_lampiran()
+        profile: dict profil produk dari PRODUCT_PROFILES. Menentukan urutan
+            section yang dirender dan cara penomoran kolom No. Jika None,
+            dipakai profil FT/VA (perilaku lama).
 
     Returns:
         docx.Document: dokumen yang siap disimpan.
     """
+    if profile is None:
+        profile = PRODUCT_PROFILES["FT_VA"]
+    sections_def = profile["sections"]
+    renumber = profile.get("renumber", True)
+
     doc = Document()
 
     # Halaman landscape dengan margin sesuai contoh
@@ -1087,7 +1207,7 @@ def build_lampiran_document(lampiran_data):
     # Hanya render section yang benar-benar punya data hasil tes.
     # Section yang seluruh barisnya kosong (None) tidak ditampilkan.
     sections_to_render = []
-    for section_name, section_count in LAMPIRAN_SECTIONS:
+    for section_name, section_count in sections_def:
         section_data = lampiran_data.get(section_name, [])
         filled_rows = [r for r in section_data if r is not None]
         if filled_rows:
@@ -1168,11 +1288,17 @@ def build_lampiran_document(lampiran_data):
         # Lampiran 7C (1..6), sedangkan sub-nomor mengikuti nomor kasus asli.
         # Contoh: RTGS Transfer adalah section ke-4 yang tampil, maka barisnya
         # dinomori 4.1, 4.2, ... meskipun di file UAT bernomor 5.x.
+        # Jika renumber=False (QRIS), kolom No memakai nomor kasus ASLI dari
+        # script (mis. 1.1, 2.5, 3.19) apa adanya.
         section_prefix = section_idx + 1
         for row_data in filled_rows:
             row_cells = table.add_row().cells
+            if renumber:
+                no_value = f"{section_prefix}.{row_data['no']}"
+            else:
+                no_value = str(row_data.get('no_full', row_data['no']))
             values = [
-                f"{section_prefix}.{row_data['no']}",
+                no_value,
                 row_data['service'],
                 row_data['scenario'],
                 row_data['expected_result'],
@@ -1210,12 +1336,12 @@ def build_lampiran_document(lampiran_data):
     return doc
 
 
-def create_lampiran_document(lampiran_data, output_path):
+def create_lampiran_document(lampiran_data, output_path, profile=None):
     """
     Membuat dokumen Word Lampiran 7C dan menyimpannya ke output_path.
     (Wrapper tipis di atas build_lampiran_document untuk pemakaian CLI.)
     """
-    doc = build_lampiran_document(lampiran_data)
+    doc = build_lampiran_document(lampiran_data, profile=profile)
     doc.save(str(output_path))
     print(f"  [OK] Dokumen berhasil disimpan: {output_path}")
 
@@ -1234,6 +1360,8 @@ def convert_uat_to_lampiran(source):
     Args:
         source: path file (str/Path) ATAU objek file-like/bytes berisi .xlsx
 
+    Produk (Fund Transfer/VA atau QRIS) dideteksi OTOMATIS dari isi file.
+
     Returns:
         tuple: (doc, stats, warnings)
             doc      : docx.Document hasil konversi (belum disimpan)
@@ -1248,13 +1376,20 @@ def convert_uat_to_lampiran(source):
         source = io.BytesIO(source)
 
     uat_data = read_uat_script(source)
-    lampiran_data, warnings = map_uat_to_lampiran(uat_data, collect_warnings=True)
+
+    # Deteksi produk otomatis (FT/VA atau QRIS) lalu pilih profilnya.
+    product_key = detect_product(uat_data)
+    profile = PRODUCT_PROFILES[product_key]
+
+    lampiran_data, warnings = map_uat_to_lampiran(
+        uat_data, collect_warnings=True, profile=profile
+    )
 
     stats = {}
     for section_name, rows in lampiran_data.items():
         stats[section_name] = sum(1 for r in rows if r is not None)
 
-    doc = build_lampiran_document(lampiran_data)
+    doc = build_lampiran_document(lampiran_data, profile=profile)
     return doc, stats, warnings
 
 
@@ -1316,16 +1451,22 @@ def main():
         print(f"        - {section_name}: {len(rows)} baris data")
     print()
 
+    # Deteksi produk otomatis (FT/VA atau QRIS)
+    product_key = detect_product(uat_data)
+    profile = PRODUCT_PROFILES[product_key]
+    print(f"        Produk terdeteksi: {product_key}")
+    print()
+
     # Mapping data
     print("  [2/3] Memproses mapping UAT Script -> Lampiran 7C...")
-    lampiran_data = map_uat_to_lampiran(uat_data)
+    lampiran_data = map_uat_to_lampiran(uat_data, profile=profile)
 
     # Hitung statistik
     total_filled = 0
     for section_name, rows in lampiran_data.items():
         filled = sum(1 for r in rows if r is not None)
         total_filled += filled
-        section_count = next(c for n, c in LAMPIRAN_SECTIONS if n == section_name)
+        section_count = next(c for n, c in profile["sections"] if n == section_name)
         print(f"        - {section_name}: {filled}/{section_count} baris terisi")
     print()
 
@@ -1333,7 +1474,7 @@ def main():
     output_path = OUTPUT_DIR / OUTPUT_FILENAME
     print(f"  [3/3] Membuat dokumen Lampiran 7C: {output_path}")
     try:
-        create_lampiran_document(lampiran_data, output_path)
+        create_lampiran_document(lampiran_data, output_path, profile=profile)
     except Exception as e:
         print(f"  [ERROR] Gagal membuat dokumen Word: {e}")
         sys.exit(1)

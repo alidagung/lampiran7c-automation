@@ -12,6 +12,7 @@ Dengan script ini, Anda tidak perlu lagi copy-paste manual data URL, Headers, Re
 - Mendukung 2 format Remarks: format "Mitra HIT" dan "BSS YANG HIT"
 - Membuat dokumen Word Lampiran 7C dengan format tabel yang benar
 - Mapping otomatis skenario UAT ke section Lampiran 7C
+- **Deteksi produk otomatis**: mendukung Fund Transfer/Virtual Account (Balance, Intrabank, Interbank, RTGS, SKNBI, Virtual Account) dan QRIS (Balance Inquiry, API Transaction History List, QR MPM). Tool memilih konfigurasi yang tepat berdasarkan isi file — cukup unggah file, tanpa setelan tambahan.
 - **Aplikasi web**: cukup unggah file, klik proses, unduh hasilnya (tanpa perlu paham teknis)
 
 ---

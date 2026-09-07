@@ -46,7 +46,15 @@ class TestDeteksiSectionFleksibel:
 
     def test_bukan_section_tidak_terdeteksi(self):
         assert detect_section_header(_section_row("Cashback")) is None
-        assert detect_section_header(_section_row("Pengecekan Mutasi")) is None
+
+    def test_section_qris_terdeteksi(self):
+        # Section khusus QRIS
+        assert detect_section_header(_section_row("QR MPM")) == "QR MPM"
+        assert detect_section_header(_section_row("API Transaction History List")) == "API Transaction History List"
+        # "Pengecekan Mutasi dan Jurnal" dikenali sbg section (walau nanti
+        # SENGAJA tidak dipetakan ke Lampiran 7C).
+        assert detect_section_header(_section_row("PENGECEKAN MUTASI DAN JURNAL")) == "PENGECEKAN MUTASI DAN JURNAL"
+        assert detect_section_header(_section_row("Pengecekan Mutasi dan Jurnal")) == "PENGECEKAN MUTASI DAN JURNAL"
 
     def test_baris_data_bukan_section(self):
         # Baris dengan Nomor Kasus (E) terisi bukan section header
