@@ -179,6 +179,9 @@ PRODUCT_PROFILES = {
         # QRIS: seluruh Remark selain Response dimasukkan apa adanya ke kolom
         # Request (tanpa parsing URL/Header/Body).
         "raw_request": True,
+        # QRIS: TIDAK memakai notifikasi/peringatan anomali (parser berbasis
+        # URL/Header/JSON tidak relevan untuk format QRIS).
+        "skip_warnings": True,
         "output_name": "Lampiran 7C - Hasil UAT QRIS.docx",
     },
 }
@@ -996,6 +999,7 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
     sections_def = profile["sections"]
     mapping_def = profile["mapping"]
     raw_request = profile.get("raw_request", False)
+    skip_warnings = profile.get("skip_warnings", False)
 
     # Inisialisasi struktur Lampiran 7C dengan None untuk setiap row
     lampiran_data = {}
@@ -1102,7 +1106,10 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
     # Bangun peringatan dengan nomor kasus SESUAI penomoran Lampiran 7C.
     #   - renumber=True  (FT/VA) : nomor = {prefix_section}.{sub_num}
     #   - renumber=False (QRIS)  : nomor = nomor kasus ASLI dari script
-    for target_section, sub_num, row_data in pending_anomaly_checks:
+    # Jika profil menandai skip_warnings (mis. QRIS), lewati sama sekali.
+    for target_section, sub_num, row_data in (
+        [] if skip_warnings else pending_anomaly_checks
+    ):
         section_prefix = section_prefix_map.get(target_section)
         if section_prefix is None:
             # Section ini akhirnya tidak ditampilkan -> lewati peringatannya.
