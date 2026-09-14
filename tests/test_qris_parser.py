@@ -35,18 +35,24 @@ REMARKS_QRMPM = (
 
 
 class TestParseQrisRequestBlock:
-    def test_url_dari_request_line_dan_host(self):
+    def test_url_persis_request_line_dan_host(self):
+        # URL Endpoint ditampilkan APA ADANYA: request line + baris Host.
         req = REMARKS_QRMPM.split("Response:")[0]
         url, headers, body = _parse_qris_request_block(req)
-        assert url == "https://ob-sandbox.banksampoerna.co.id/snap-qris/v1.1/qr/qr-mpm-generate"
+        assert url == (
+            "POST /snap-qris/v1.1/qr/qr-mpm-generate HTTP/1.1\n"
+            "Host: ob-sandbox.banksampoerna.co.id"
+        )
 
-    def test_headers_terdeteksi(self):
+    def test_host_tidak_masuk_header(self):
+        # Host hanya di URL Endpoint, TIDAK di Header Request.
         req = REMARKS_QRMPM.split("Response:")[0]
         _, headers, _ = _parse_qris_request_block(req)
         joined = "\n".join(headers)
         assert "Authorization: Bearer xxx" in joined
         assert "CHANNEL-ID: CH001" in joined
         assert "X-PARTNER-ID: KIRIMO" in joined
+        assert not any(h.lower().startswith("host") for h in headers)
 
     def test_body_terdeteksi(self):
         req = REMARKS_QRMPM.split("Response:")[0]
