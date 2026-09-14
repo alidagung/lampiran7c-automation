@@ -170,11 +170,16 @@ PRODUCT_PROFILES = {
         "sections": FT_VA_SECTIONS,
         "mapping": FT_VA_MAPPING,
         "renumber": True,
+        "output_name": "Lampiran 7C - Hasil UAT VA-FT.docx",
     },
     "QRIS": {
         "sections": QRIS_SECTIONS,
         "mapping": QRIS_MAPPING,
         "renumber": False,
+        # QRIS: parser khusus format "raw HTTP" -> deteksi otomatis URL
+        # Endpoint, Header Request, dan Request Body (disusun seperti VA).
+        "request_mode": "qris",
+        "output_name": "Lampiran 7C - Hasil UAT QRIS.docx",
     },
 }
 
@@ -726,6 +731,196 @@ def split_request_response(remarks_text):
     return request_part, response_part
 
 
+def _parse_qris_request_block(request_raw):
+    """
+    Parse blok Request QRIS (format "raw HTTP") menjadi (url, headers_list, body).
+
+    Menangani 2 variasi:
+      Variasi A (raw HTTP):
+        Request:
+        POST /snap-qris/v1.1/qr/qr-mpm-generate HTTP/1.1
+        Host: ob-sandbox.banksampoerna.co.id
+        Authorization: Bearer xxx
+        Content-Type: application/json
+        ...
+        <baris kosong>
+        {JSON body}
+      Variasi B (pakai label URL:):
+        URL: https://api-staging.kirimo.dev/provider/v1.0/qr/qr-mpm-notify
+        Authorization: Bearer xxx
+        Content-Type: application/json
+        ...
+        <baris kosong>
+        {JSON body}
+
+    Returns:
+        tuple: (url, headers_list, body)
+            url          : str URL endpoint (bisa "" jika tak ditemukan)
+            headers_list : list[str] item "Key: Value" (apa adanya)
+            body         : str isi body (bisa "")
+    """
+    text = request_raw.replace("\r\n", "\n").replace("\r", "\n")
+    lines = text.split("\n")
+
+    # Buang label pembuka "Request:" bila berdiri sendiri di awal.
+    while lines and lines[0].strip().lower().rstrip(":") == "request":
+        lines = lines[1:]
+
+    # Pisahkan header-area dan body: body dimulai setelah BARIS KOSONG pertama.
+    # (Konvensi HTTP: header dan body dipisah baris kosong.)
+    body = ""
+    header_area = lines
+    for i, ln in enumerate(lines):
+        if ln.strip() == "":
+            header_area = lines[:i]
+            body = "\n".join(lines[i + 1:]).strip()
+            break
+
+    url = ""
+    method_path = None
+    host = None
+    headers_list = []
+
+    for ln in header_area:
+        s = ln.strip()
+        if not s:
+            continue
+        # Baris label URL eksplisit
+        m_url = re.match(r"(?i)^url\s*:\s*(.+)$", s)
+        if m_url:
+            url = m_url.group(1).strip()
+            continue
+        # Request line HTTP: "METHOD /path HTTP/x.y"
+        m_req = re.match(r"^([A-Z]+)\s+(\S+)\s+HTTP/\d(?:\.\d)?$", s)
+        if m_req:
+            method_path = m_req.group(2).strip()
+            continue
+        # Header "Key: Value"
+        if ":" in s:
+            key, val = s.split(":", 1)
+            key = key.strip()
+            val = val.strip()
+            if key.lower() == "host":
+                host = val
+                # Host TIDAK dimasukkan sebagai header (dipakai untuk bentuk URL),
+                # namun tetap tampil agar tidak ada yang hilang.
+                headers_list.append(f"{key}: {val}")
+            else:
+                headers_list.append(f"{key}: {val}")
+
+    # Bentuk URL dari request line + Host bila URL belum didapat dari label.
+    if not url and method_path:
+        if host:
+            url = f"https://{host}{method_path}"
+        else:
+            url = method_path
+
+    return url, headers_list, body
+
+
+def split_request_response_qris(remarks_text):
+    """
+    Parser QRIS: deteksi otomatis URL Endpoint, Header Request, dan Request Body
+    dari kolom Remark (format raw HTTP), lalu susun ke format Lampiran 7C yang
+    sama seperti VA. Bagian Response dipisah & di-compress.
+
+    Returns:
+        tuple: (request_content, response_content)
+    """
+    if not remarks_text or remarks_text.strip().lower() == "none":
+        return "", ""
+
+    text = remarks_text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Pisahkan Request vs Response pada penanda "Response:" (utamakan baris utuh).
+    matches = list(re.finditer(r"(?im)^\s*response(?:\s*body)?\s*:\s*$", text))
+    if not matches:
+        matches = list(re.finditer(r"(?i)\bresponse(?:\s*body)?\s*:", text))
+
+    if matches:
+        m = matches[-1]
+        request_raw = text[:m.start()].strip()
+        response_raw = text[m.end():].strip()
+    else:
+        request_raw = text.strip()
+        response_raw = ""
+
+    url, headers_list, body = _parse_qris_request_block(request_raw)
+
+    request_blocks = []
+    if url:
+        request_blocks.append(f"URL Endpoint:\n{url}")
+    if headers_list:
+        # Susun jadi array seperti VA: satu header per baris, "Key=Value".
+        headers_raw = "\n".join(headers_list)
+        request_blocks.append(f"Header Request:\n{_format_headers(headers_raw)}")
+    if body:
+        request_blocks.append(f"Request Body:\n{_pretty_json(body)}")
+
+    request_part = "\n\n".join(request_blocks).strip()
+
+    # Fallback: jika tidak ada satupun blok terdeteksi, pakai request mentah.
+    if not request_part:
+        request_part = request_raw
+
+    if response_raw:
+        response_part = f"Response Body:\n{_compress_json(response_raw)}"
+    else:
+        response_part = ""
+
+    return request_part, response_part
+
+
+def split_request_response_raw(remarks_text):
+    """
+    Varian untuk produk QRIS: SELURUH isi Remark selain bagian Response
+    dimasukkan APA ADANYA ke kolom Request (tanpa di-parse jadi URL Endpoint/
+    Header/Request Body). Bagian Response dipisah dan di-compress.
+
+    Aturan pemisahan:
+      - Cari penanda "Response:" / "Response Body:" (case-insensitive).
+      - Teks SEBELUM penanda -> kolom Request (mentah, apa adanya).
+      - Teks SETELAH penanda  -> kolom Response (di-compress bila JSON).
+      - Jika tidak ada penanda Response -> seluruh teks masuk ke Request,
+        Response kosong.
+
+    Catatan: label pembuka "Request:" di awal (jika ada) dipertahankan apa
+    adanya sesuai permintaan (tidak diubah/dihapus).
+
+    Returns:
+        tuple: (request_content, response_content)
+    """
+    if not remarks_text or remarks_text.strip().lower() == "none":
+        return "", ""
+
+    text = remarks_text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Cari penanda Response (ambil kemunculan terakhir agar tak salah tangkap
+    # kata 'response' di dalam body request). Umumnya penanda berdiri di awal
+    # baris.
+    matches = list(re.finditer(r"(?im)^\s*response(?:\s*body)?\s*:\s*$", text))
+    if not matches:
+        # fallback: penanda 'Response:' di mana saja
+        matches = list(re.finditer(r"(?i)\bresponse(?:\s*body)?\s*:", text))
+
+    if matches:
+        m = matches[-1]
+        request_raw = text[:m.start()].strip()
+        response_raw = text[m.end():].strip()
+    else:
+        request_raw = text.strip()
+        response_raw = ""
+
+    # Request: apa adanya (mentah). Response: compress bila JSON.
+    request_part = request_raw
+    if response_raw:
+        response_part = f"Response Body:\n{_compress_json(response_raw)}"
+    else:
+        response_part = ""
+
+    return request_part, response_part
+
+
 # ============================================================
 # MAPPING LOGIC
 # ============================================================
@@ -787,7 +982,7 @@ def _is_valid_json(raw):
         return False
 
 
-def detect_anomalies(row_data, display_no=None):
+def detect_anomalies(row_data, display_no=None, request_mode="default"):
     """
     Deteksi kondisi ABNORMAL pada satu baris UAT agar bisa ditampilkan sebagai
     peringatan (tidak mengubah data apa pun - hanya memberi tahu).
@@ -826,8 +1021,28 @@ def detect_anomalies(row_data, display_no=None):
         return warnings
 
     text = remarks.replace("\r\n", "\n").replace("\r", "\n")
-    text = _normalize_inline_markers(text)
-    blocks = _parse_remarks_blocks(text)
+
+    if request_mode == "qris":
+        # Ekstrak bagian memakai parser QRIS (format raw HTTP).
+        rmatch = list(re.finditer(r"(?im)^\s*response(?:\s*body)?\s*:\s*$", text))
+        if not rmatch:
+            rmatch = list(re.finditer(r"(?i)\bresponse(?:\s*body)?\s*:", text))
+        if rmatch:
+            mm = rmatch[-1]
+            req_raw = text[:mm.start()].strip()
+            resp_raw = text[mm.end():].strip()
+        else:
+            req_raw, resp_raw = text.strip(), ""
+        q_url, q_headers, q_body = _parse_qris_request_block(req_raw)
+        blocks = {
+            "url": q_url,
+            "headers": "\n".join(q_headers),
+            "request_body": q_body,
+            "response": resp_raw,
+        }
+    else:
+        text = _normalize_inline_markers(text)
+        blocks = _parse_remarks_blocks(text)
 
     # (2) Bagian yang hilang
     if not blocks.get("url", "").strip():
@@ -839,7 +1054,10 @@ def detect_anomalies(row_data, display_no=None):
     if not blocks.get("response", "").strip():
         warnings.append(f"Kasus {kasus}: bagian Response tidak ditemukan pada Remarks.")
 
-    # (3) JSON tidak valid (hanya cek jika bagiannya ada)
+    # (3) JSON tidak valid (hanya cek jika bagiannya ada).
+    # Untuk QRIS, Request Body tetap dicek JSON (memang JSON), TETAPI Response
+    # QRIS berupa raw HTTP (status line + header + body), jadi cek JSON penuh
+    # tidak relevan -> hanya cek kekosongannya.
     body_raw = blocks.get("request_body", "")
     if body_raw.strip() and not _is_valid_json(body_raw):
         warnings.append(
@@ -848,7 +1066,7 @@ def detect_anomalies(row_data, display_no=None):
 
     resp_raw = blocks.get("response", "")
     if resp_raw.strip():
-        if not _is_valid_json(resp_raw):
+        if request_mode != "qris" and not _is_valid_json(resp_raw):
             warnings.append(
                 f"Kasus {kasus}: Response Body bukan JSON valid (format/syntax) - mohon cek manual."
             )
@@ -940,6 +1158,8 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
         profile = PRODUCT_PROFILES["FT_VA"]
     sections_def = profile["sections"]
     mapping_def = profile["mapping"]
+    request_mode = profile.get("request_mode", "default")
+    skip_warnings = profile.get("skip_warnings", False)
 
     # Inisialisasi struktur Lampiran 7C dengan None untuk setiap row
     lampiran_data = {}
@@ -1005,6 +1225,10 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
             elif not remarks_text or remarks_text.lower() == "none":
                 # Remarks kosong: Request dan Response kosong
                 notes = ""
+            elif request_mode == "qris":
+                # QRIS: parser khusus raw HTTP -> URL/Header/Body terdeteksi
+                # otomatis dan disusun seperti VA. Response dipisah & compress.
+                request_content, response_content = split_request_response_qris(remarks_text)
             else:
                 # Pisahkan Remarks menjadi Request (URL+Headers+Request Body)
                 # dan Response (isi setelah penanda "Response:")
@@ -1042,7 +1266,10 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
     # Bangun peringatan dengan nomor kasus SESUAI penomoran Lampiran 7C.
     #   - renumber=True  (FT/VA) : nomor = {prefix_section}.{sub_num}
     #   - renumber=False (QRIS)  : nomor = nomor kasus ASLI dari script
-    for target_section, sub_num, row_data in pending_anomaly_checks:
+    # Jika profil menandai skip_warnings (mis. QRIS), lewati sama sekali.
+    for target_section, sub_num, row_data in (
+        [] if skip_warnings else pending_anomaly_checks
+    ):
         section_prefix = section_prefix_map.get(target_section)
         if section_prefix is None:
             # Section ini akhirnya tidak ditampilkan -> lewati peringatannya.
@@ -1051,7 +1278,9 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
             display_no = f"{section_prefix}.{sub_num}"
         else:
             display_no = row_data['nomor_kasus_tes']
-        warnings.extend(detect_anomalies(row_data, display_no=display_no))
+        warnings.extend(
+            detect_anomalies(row_data, display_no=display_no, request_mode=request_mode)
+        )
 
     if collect_warnings:
         return lampiran_data, warnings
@@ -1399,7 +1628,7 @@ def create_lampiran_document(lampiran_data, output_path, profile=None):
 # API REUSABLE (dipakai aplikasi web)
 # ============================================================
 
-def convert_uat_to_lampiran(source):
+def convert_uat_to_lampiran(source, product=None):
     """
     Konversi UAT Script (Excel) menjadi dokumen Lampiran 7C.
 
@@ -1408,14 +1637,16 @@ def convert_uat_to_lampiran(source):
 
     Args:
         source: path file (str/Path) ATAU objek file-like/bytes berisi .xlsx
-
-    Produk (Fund Transfer/VA atau QRIS) dideteksi OTOMATIS dari isi file.
+        product: (opsional) kunci produk pada PRODUCT_PROFILES ("FT_VA" atau
+            "QRIS") untuk MEMAKSA profil tertentu. Jika None/"AUTO", produk
+            dideteksi otomatis dari isi file.
 
     Returns:
-        tuple: (doc, stats, warnings)
-            doc      : docx.Document hasil konversi (belum disimpan)
-            stats    : dict {section_name: jumlah_baris_terisi} untuk ringkasan
-            warnings : list[str] daftar peringatan anomali (bisa kosong)
+        tuple: (doc, stats, warnings, product_key)
+            doc         : docx.Document hasil konversi (belum disimpan)
+            stats       : dict {section_name: jumlah_baris_terisi}
+            warnings    : list[str] daftar peringatan anomali (bisa kosong)
+            product_key : str kunci produk yang dipakai ("FT_VA" / "QRIS")
     """
     import io
 
@@ -1426,8 +1657,11 @@ def convert_uat_to_lampiran(source):
 
     uat_data = read_uat_script(source)
 
-    # Deteksi produk otomatis (FT/VA atau QRIS) lalu pilih profilnya.
-    product_key = detect_product(uat_data)
+    # Tentukan profil: dipaksa (product) atau deteksi otomatis.
+    if product and product != "AUTO" and product in PRODUCT_PROFILES:
+        product_key = product
+    else:
+        product_key = detect_product(uat_data)
     profile = PRODUCT_PROFILES[product_key]
 
     lampiran_data, warnings = map_uat_to_lampiran(
@@ -1439,24 +1673,26 @@ def convert_uat_to_lampiran(source):
         stats[section_name] = sum(1 for r in rows if r is not None)
 
     doc = build_lampiran_document(lampiran_data, profile=profile)
-    return doc, stats, warnings
+    return doc, stats, warnings, product_key
 
 
-def convert_uat_to_lampiran_bytes(source):
+def convert_uat_to_lampiran_bytes(source, product=None):
     """
     Sama seperti convert_uat_to_lampiran(), tetapi mengembalikan dokumen dalam
     bentuk bytes (siap dikirim sebagai unduhan di aplikasi web).
 
     Returns:
-        tuple: (docx_bytes, stats, warnings)
+        tuple: (docx_bytes, stats, warnings, product_key, output_name)
+            output_name : nama file .docx yang disarankan sesuai produk
     """
     import io
 
-    doc, stats, warnings = convert_uat_to_lampiran(source)
+    doc, stats, warnings, product_key = convert_uat_to_lampiran(source, product=product)
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
-    return buffer.getvalue(), stats, warnings
+    output_name = PRODUCT_PROFILES[product_key].get("output_name", OUTPUT_FILENAME)
+    return buffer.getvalue(), stats, warnings, product_key, output_name
 
 
 # ============================================================
