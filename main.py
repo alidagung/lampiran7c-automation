@@ -170,11 +170,16 @@ PRODUCT_PROFILES = {
         "sections": FT_VA_SECTIONS,
         "mapping": FT_VA_MAPPING,
         "renumber": True,
+        "output_name": "Lampiran 7C - Hasil UAT VA-FT.docx",
     },
     "QRIS": {
         "sections": QRIS_SECTIONS,
         "mapping": QRIS_MAPPING,
         "renumber": False,
+        # QRIS: seluruh Remark selain Response dimasukkan apa adanya ke kolom
+        # Request (tanpa parsing URL/Header/Body).
+        "raw_request": True,
+        "output_name": "Lampiran 7C - Hasil UAT QRIS.docx",
     },
 }
 
@@ -726,6 +731,56 @@ def split_request_response(remarks_text):
     return request_part, response_part
 
 
+def split_request_response_raw(remarks_text):
+    """
+    Varian untuk produk QRIS: SELURUH isi Remark selain bagian Response
+    dimasukkan APA ADANYA ke kolom Request (tanpa di-parse jadi URL Endpoint/
+    Header/Request Body). Bagian Response dipisah dan di-compress.
+
+    Aturan pemisahan:
+      - Cari penanda "Response:" / "Response Body:" (case-insensitive).
+      - Teks SEBELUM penanda -> kolom Request (mentah, apa adanya).
+      - Teks SETELAH penanda  -> kolom Response (di-compress bila JSON).
+      - Jika tidak ada penanda Response -> seluruh teks masuk ke Request,
+        Response kosong.
+
+    Catatan: label pembuka "Request:" di awal (jika ada) dipertahankan apa
+    adanya sesuai permintaan (tidak diubah/dihapus).
+
+    Returns:
+        tuple: (request_content, response_content)
+    """
+    if not remarks_text or remarks_text.strip().lower() == "none":
+        return "", ""
+
+    text = remarks_text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Cari penanda Response (ambil kemunculan terakhir agar tak salah tangkap
+    # kata 'response' di dalam body request). Umumnya penanda berdiri di awal
+    # baris.
+    matches = list(re.finditer(r"(?im)^\s*response(?:\s*body)?\s*:\s*$", text))
+    if not matches:
+        # fallback: penanda 'Response:' di mana saja
+        matches = list(re.finditer(r"(?i)\bresponse(?:\s*body)?\s*:", text))
+
+    if matches:
+        m = matches[-1]
+        request_raw = text[:m.start()].strip()
+        response_raw = text[m.end():].strip()
+    else:
+        request_raw = text.strip()
+        response_raw = ""
+
+    # Request: apa adanya (mentah). Response: compress bila JSON.
+    request_part = request_raw
+    if response_raw:
+        response_part = f"Response Body:\n{_compress_json(response_raw)}"
+    else:
+        response_part = ""
+
+    return request_part, response_part
+
+
 # ============================================================
 # MAPPING LOGIC
 # ============================================================
@@ -940,6 +995,7 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
         profile = PRODUCT_PROFILES["FT_VA"]
     sections_def = profile["sections"]
     mapping_def = profile["mapping"]
+    raw_request = profile.get("raw_request", False)
 
     # Inisialisasi struktur Lampiran 7C dengan None untuk setiap row
     lampiran_data = {}
@@ -1005,6 +1061,10 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
             elif not remarks_text or remarks_text.lower() == "none":
                 # Remarks kosong: Request dan Response kosong
                 notes = ""
+            elif raw_request:
+                # QRIS: seluruh Remark selain Response masuk apa adanya ke
+                # kolom Request; Response dipisah & di-compress.
+                request_content, response_content = split_request_response_raw(remarks_text)
             else:
                 # Pisahkan Remarks menjadi Request (URL+Headers+Request Body)
                 # dan Response (isi setelah penanda "Response:")
@@ -1453,7 +1513,8 @@ def convert_uat_to_lampiran_bytes(source, product=None):
     bentuk bytes (siap dikirim sebagai unduhan di aplikasi web).
 
     Returns:
-        tuple: (docx_bytes, stats, warnings, product_key)
+        tuple: (docx_bytes, stats, warnings, product_key, output_name)
+            output_name : nama file .docx yang disarankan sesuai produk
     """
     import io
 
@@ -1461,7 +1522,8 @@ def convert_uat_to_lampiran_bytes(source, product=None):
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
-    return buffer.getvalue(), stats, warnings, product_key
+    output_name = PRODUCT_PROFILES[product_key].get("output_name", OUTPUT_FILENAME)
+    return buffer.getvalue(), stats, warnings, product_key, output_name
 
 
 # ============================================================

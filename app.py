@@ -109,12 +109,13 @@ if "result_bytes" not in st.session_state:
     st.session_state.result_stats = None
     st.session_state.result_warnings = None
     st.session_state.result_product = None
+    st.session_state.result_output_name = None
 
 if process_clicked and uploaded_file is not None:
     try:
         with st.spinner("Memproses file, mohon tunggu..."):
             file_bytes = uploaded_file.getvalue()
-            docx_bytes, stats, warnings, product_key = convert_uat_to_lampiran_bytes(
+            docx_bytes, stats, warnings, product_key, output_name = convert_uat_to_lampiran_bytes(
                 file_bytes, product=selected_product
             )
 
@@ -122,6 +123,7 @@ if process_clicked and uploaded_file is not None:
         st.session_state.result_stats = stats
         st.session_state.result_warnings = warnings
         st.session_state.result_product = product_key
+        st.session_state.result_output_name = output_name
 
         # Info produk yang dipakai (berguna terutama pada mode Otomatis)
         st.info(f"Produk yang diproses: **{PRODUCT_LABEL.get(product_key, product_key)}**")
@@ -205,7 +207,8 @@ if st.session_state.result_stats is not None:
     # Tombol unduh
     if st.session_state.result_bytes:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        download_name = OUTPUT_FILENAME.replace(
+        base_name = st.session_state.get("result_output_name") or OUTPUT_FILENAME
+        download_name = base_name.replace(
             ".docx", f" {timestamp}.docx"
         )
         st.download_button(
