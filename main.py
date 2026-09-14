@@ -1399,7 +1399,7 @@ def create_lampiran_document(lampiran_data, output_path, profile=None):
 # API REUSABLE (dipakai aplikasi web)
 # ============================================================
 
-def convert_uat_to_lampiran(source):
+def convert_uat_to_lampiran(source, product=None):
     """
     Konversi UAT Script (Excel) menjadi dokumen Lampiran 7C.
 
@@ -1408,14 +1408,16 @@ def convert_uat_to_lampiran(source):
 
     Args:
         source: path file (str/Path) ATAU objek file-like/bytes berisi .xlsx
-
-    Produk (Fund Transfer/VA atau QRIS) dideteksi OTOMATIS dari isi file.
+        product: (opsional) kunci produk pada PRODUCT_PROFILES ("FT_VA" atau
+            "QRIS") untuk MEMAKSA profil tertentu. Jika None/"AUTO", produk
+            dideteksi otomatis dari isi file.
 
     Returns:
-        tuple: (doc, stats, warnings)
-            doc      : docx.Document hasil konversi (belum disimpan)
-            stats    : dict {section_name: jumlah_baris_terisi} untuk ringkasan
-            warnings : list[str] daftar peringatan anomali (bisa kosong)
+        tuple: (doc, stats, warnings, product_key)
+            doc         : docx.Document hasil konversi (belum disimpan)
+            stats       : dict {section_name: jumlah_baris_terisi}
+            warnings    : list[str] daftar peringatan anomali (bisa kosong)
+            product_key : str kunci produk yang dipakai ("FT_VA" / "QRIS")
     """
     import io
 
@@ -1426,8 +1428,11 @@ def convert_uat_to_lampiran(source):
 
     uat_data = read_uat_script(source)
 
-    # Deteksi produk otomatis (FT/VA atau QRIS) lalu pilih profilnya.
-    product_key = detect_product(uat_data)
+    # Tentukan profil: dipaksa (product) atau deteksi otomatis.
+    if product and product != "AUTO" and product in PRODUCT_PROFILES:
+        product_key = product
+    else:
+        product_key = detect_product(uat_data)
     profile = PRODUCT_PROFILES[product_key]
 
     lampiran_data, warnings = map_uat_to_lampiran(
@@ -1439,24 +1444,24 @@ def convert_uat_to_lampiran(source):
         stats[section_name] = sum(1 for r in rows if r is not None)
 
     doc = build_lampiran_document(lampiran_data, profile=profile)
-    return doc, stats, warnings
+    return doc, stats, warnings, product_key
 
 
-def convert_uat_to_lampiran_bytes(source):
+def convert_uat_to_lampiran_bytes(source, product=None):
     """
     Sama seperti convert_uat_to_lampiran(), tetapi mengembalikan dokumen dalam
     bentuk bytes (siap dikirim sebagai unduhan di aplikasi web).
 
     Returns:
-        tuple: (docx_bytes, stats, warnings)
+        tuple: (docx_bytes, stats, warnings, product_key)
     """
     import io
 
-    doc, stats, warnings = convert_uat_to_lampiran(source)
+    doc, stats, warnings, product_key = convert_uat_to_lampiran(source, product=product)
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
-    return buffer.getvalue(), stats, warnings
+    return buffer.getvalue(), stats, warnings, product_key
 
 
 # ============================================================

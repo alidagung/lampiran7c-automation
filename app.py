@@ -17,9 +17,17 @@ import streamlit as st
 
 from main import (
     convert_uat_to_lampiran_bytes,
-    LAMPIRAN_SECTIONS,
+    PRODUCT_PROFILES,
     OUTPUT_FILENAME,
 )
+
+# Label produk untuk dropdown (tampilan -> kunci di PRODUCT_PROFILES / "AUTO")
+PRODUCT_OPTIONS = {
+    "Deteksi otomatis": "AUTO",
+    "Fund Transfer & Virtual Account (VA/FT)": "FT_VA",
+    "QRIS": "QRIS",
+}
+PRODUCT_LABEL = {"FT_VA": "Fund Transfer & Virtual Account (VA/FT)", "QRIS": "QRIS"}
 
 
 # ============================================================
@@ -50,7 +58,26 @@ st.divider()
 # LANGKAH 1 — UNGGAH FILE
 # ============================================================
 
-st.subheader("1. Unggah file UAT Script")
+st.subheader("1. Pilih produk & unggah file UAT Script")
+
+product_label = st.selectbox(
+    "Jenis produk UAT Script",
+    options=list(PRODUCT_OPTIONS.keys()),
+    index=0,
+    help=(
+        "Pilih 'Fund Transfer & Virtual Account' untuk UAT VA/FT, atau 'QRIS' "
+        "untuk UAT QRIS. Pilihan ini MEMAKSA konfigurasi produk yang dipakai. "
+        "Gunakan 'Deteksi otomatis' bila ingin aplikasi menebak sendiri dari isi file."
+    ),
+)
+selected_product = PRODUCT_OPTIONS[product_label]
+
+if selected_product == "FT_VA":
+    st.caption("📦 Mode **VA/FT** — section: Balance Inquiry, Intrabank, Interbank, RTGS, SKNBI, Virtual Account.")
+elif selected_product == "QRIS":
+    st.caption("📦 Mode **QRIS** — section: Balance Inquiry, API Transaction History List, QR MPM.")
+else:
+    st.caption("🔎 Mode **Otomatis** — produk ditentukan dari isi file.")
 
 uploaded_file = st.file_uploader(
     "Pilih file UAT Script (.xlsx)",
@@ -81,22 +108,30 @@ if "result_bytes" not in st.session_state:
     st.session_state.result_bytes = None
     st.session_state.result_stats = None
     st.session_state.result_warnings = None
+    st.session_state.result_product = None
 
 if process_clicked and uploaded_file is not None:
     try:
         with st.spinner("Memproses file, mohon tunggu..."):
             file_bytes = uploaded_file.getvalue()
-            docx_bytes, stats, warnings = convert_uat_to_lampiran_bytes(file_bytes)
+            docx_bytes, stats, warnings, product_key = convert_uat_to_lampiran_bytes(
+                file_bytes, product=selected_product
+            )
 
         st.session_state.result_bytes = docx_bytes
         st.session_state.result_stats = stats
         st.session_state.result_warnings = warnings
+        st.session_state.result_product = product_key
+
+        # Info produk yang dipakai (berguna terutama pada mode Otomatis)
+        st.info(f"Produk yang diproses: **{PRODUCT_LABEL.get(product_key, product_key)}**")
 
         total = sum(stats.values())
         if total == 0:
             st.warning(
                 "File berhasil diproses, tetapi **tidak ada data hasil UAT** "
-                "yang ditemukan. Periksa kembali isi file UAT Script Anda."
+                "yang ditemukan. Periksa kembali isi file UAT Script Anda "
+                "atau pastikan jenis produk yang dipilih sudah tepat."
             )
         else:
             st.success(f"Berhasil! Total **{total} baris** data dipindahkan "
@@ -105,6 +140,7 @@ if process_clicked and uploaded_file is not None:
         st.session_state.result_bytes = None
         st.session_state.result_stats = None
         st.session_state.result_warnings = None
+        st.session_state.result_product = None
         st.error(
             "Gagal memproses file. Pastikan file yang diunggah adalah "
             "UAT Script (.xlsx) dengan format yang benar."
@@ -141,9 +177,13 @@ if st.session_state.result_stats is not None:
 
     stats = st.session_state.result_stats
 
+    # Section mengikuti produk yang benar-benar dipakai saat proses.
+    used_product = st.session_state.get("result_product") or "FT_VA"
+    used_sections = PRODUCT_PROFILES[used_product]["sections"]
+
     # Tabel ringkasan: layanan yang dites (baris terisi) vs total baris template
     rows = []
-    for section_name, total_baris in LAMPIRAN_SECTIONS:
+    for section_name, total_baris in used_sections:
         terisi = stats.get(section_name, 0)
         status = "✅ Ditampilkan" if terisi > 0 else "— Tidak dites"
         rows.append(
