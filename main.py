@@ -51,6 +51,19 @@ COLUMN_WIDTHS_TWIPS = [700, 1418, 1984, 1701, 4829, 1975, 851, 1710]
 # Indeks: 0=No, 1=Service, 2=Scenario, 3=Expected Result, 6=Result
 CENTER_ALIGNED_COLUMNS = {0, 1, 2, 3, 6}
 
+# Catatan/ketentuan resmi ASPI yang WAJIB muncul di akhir dokumen (setelah
+# tabel terakhir) dan TIDAK BOLEH dihapus. Struktur:
+#   - level 0 : butir utama (penanda "-")
+#   - level 1 : sub-poin (penanda "a.", "b.", ...)
+FOOTER_NOTES = [
+    (0, "Lampiran Skenario hasil uji fungsional sekurangnya 1 Pengguna Layanan atas 1 sub API unverified, dengan ketentuan sebagai berikut:"),
+    (1, "a.\tPada kolom request diisi dengan request yang dilakukan Pengguna layanan, sedangkan pada kolom response diisi dengan respon yang diberikan Penyedia. Sementara pada kolom result diisi dengan hasil PASS atau NOT PASS yang harus sesuai dengan expected result."),
+    (1, "b.\tPengisian pada dokumen skenario hasil uji fungsional tidak dilakukan dengan cara screen capture, melainkan dilakukan dengan cara copy paste payload request dan response dari log API server ke kolom tabel skenario hasil uji fungsional"),
+    (1, "c.\tSeluruh skenario diujikan dan tidak boleh dihapus atau diubah. Dalam hal terdapat skenario yang tidak diujikan dapat dikosongkan pengisiannya, namun diberikan catatan pada kolom Notes yang akan kami review lebih lanjut apakah skenario diperkenankan untuk tidak diujikan."),
+    (1, "d.\tDalam hal terdapat penambahan skenario pengujian, maka penambahan tersebut dilakukan pada baris paling bawah, sehingga tidak mengubah susunan atau urutan template skenario."),
+    (0, "Dalam hal SELURUH sub API yang diajukan telah verified, tidak perlu menyampaikan dokumen skenario uji fungsional."),
+]
+
 
 # ============================================================
 # KONFIGURASI & KONSTANTA
@@ -1166,6 +1179,34 @@ def _write_cell_rich(cell, text):
             run.font.name = FONT_NAME
 
 
+def _add_footer_notes(doc):
+    """
+    Menambahkan catatan/ketentuan resmi ASPI di akhir dokumen (sekali saja).
+    Font Calibri ukuran 10. Butir utama diberi penanda "-", sub-poin (a-d)
+    diberi indentasi. Teks ini WAJIB ada dan tidak boleh dihapus.
+    """
+    # Beri sedikit jarak dari tabel terakhir
+    doc.add_paragraph()
+
+    for level, text in FOOTER_NOTES:
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.space_before = Pt(0)
+        pf.space_after = Pt(2)
+        pf.line_spacing = 1.0
+        if level == 0:
+            # Butir utama: penanda "-"
+            marker = "-\t"
+            pf.left_indent = Cm(0.5)
+        else:
+            # Sub-poin: indentasi lebih dalam, penanda huruf sudah termasuk teks
+            marker = ""
+            pf.left_indent = Cm(1.2)
+        run = p.add_run(marker + text)
+        run.font.name = FONT_NAME
+        run.font.size = Pt(10)
+
+
 def build_lampiran_document(lampiran_data, profile=None):
     """
     Membangun dokumen Word Lampiran 7C dari data hasil mapping dan
@@ -1337,6 +1378,9 @@ def build_lampiran_document(lampiran_data, profile=None):
         for row in table.rows:
             for ci, width_twips in enumerate(COLUMN_WIDTHS_TWIPS):
                 row.cells[ci].width = Cm(width_twips / 567.0)
+
+    # Catatan/ketentuan resmi ASPI di akhir dokumen (setelah tabel terakhir).
+    _add_footer_notes(doc)
 
     return doc
 
