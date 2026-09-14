@@ -1242,7 +1242,9 @@ def build_lampiran_document(lampiran_data, profile=None):
         if section_idx > 0:
             doc.add_page_break()
 
-        # Info penyedia & layanan - paragraf rapat (single line, spacing 0pt)
+        # Info penyedia & layanan - paragraf SINGLE (spacing 1.0), font
+        # Calibri ukuran 10. Nama Pengguna & Tanggal sengaja dibiarkan kosong
+        # untuk diisi manual; Nama Layanan API mengikuti nama section.
         info_lines = [
             f"Nama Penyedia Layanan : {NAMA_PENYEDIA_LAYANAN}",
             f"Nama Pengguna Layanan : {NAMA_PENGGUNA_LAYANAN}",
@@ -1250,11 +1252,14 @@ def build_lampiran_document(lampiran_data, profile=None):
             f"Tanggal Pengujian     : {TANGGAL_PENGUJIAN}",
         ]
         for line in info_lines:
-            p = doc.add_paragraph(line)
+            p = doc.add_paragraph()
             pf = p.paragraph_format
             pf.space_before = Pt(0)
             pf.space_after = Pt(0)
-            pf.line_spacing = 1.5
+            pf.line_spacing = 1.0  # single
+            run = p.add_run(line)
+            run.font.name = FONT_NAME
+            run.font.size = Pt(10)
 
         doc.add_paragraph()
 
