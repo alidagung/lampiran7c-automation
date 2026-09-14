@@ -776,9 +776,9 @@ def _parse_qris_request_block(request_raw):
             body = "\n".join(lines[i + 1:]).strip()
             break
 
-    url = ""
-    method_path = None
-    host = None
+    url_label = ""        # dari baris "URL: ..." bila ada
+    request_line = ""     # baris "METHOD /path HTTP/x" apa adanya
+    host_line = ""        # baris "Host: ..." apa adanya
     headers_list = []
 
     for ln in header_area:
@@ -788,12 +788,11 @@ def _parse_qris_request_block(request_raw):
         # Baris label URL eksplisit
         m_url = re.match(r"(?i)^url\s*:\s*(.+)$", s)
         if m_url:
-            url = m_url.group(1).strip()
+            url_label = m_url.group(1).strip()
             continue
-        # Request line HTTP: "METHOD /path HTTP/x.y"
-        m_req = re.match(r"^([A-Z]+)\s+(\S+)\s+HTTP/\d(?:\.\d)?$", s)
-        if m_req:
-            method_path = m_req.group(2).strip()
+        # Request line HTTP: "METHOD /path HTTP/x.y" -> disimpan APA ADANYA
+        if re.match(r"^([A-Z]+)\s+(\S+)\s+HTTP/\d(?:\.\d)?$", s):
+            request_line = s
             continue
         # Header "Key: Value"
         if ":" in s:
@@ -801,19 +800,20 @@ def _parse_qris_request_block(request_raw):
             key = key.strip()
             val = val.strip()
             if key.lower() == "host":
-                host = val
-                # Host TIDAK dimasukkan sebagai header (dipakai untuk bentuk URL),
-                # namun tetap tampil agar tidak ada yang hilang.
-                headers_list.append(f"{key}: {val}")
+                # Host dipakai untuk URL Endpoint, TIDAK dimasukkan ke Header.
+                host_line = s
             else:
                 headers_list.append(f"{key}: {val}")
 
-    # Bentuk URL dari request line + Host bila URL belum didapat dari label.
-    if not url and method_path:
-        if host:
-            url = f"https://{host}{method_path}"
-        else:
-            url = method_path
+    # Susun URL Endpoint:
+    #  - Jika ada label "URL:" -> pakai nilainya apa adanya.
+    #  - Jika ada request line -> tampilkan PERSIS: request line + baris Host.
+    if url_label:
+        url = url_label
+    elif request_line:
+        url = request_line + (("\n" + host_line) if host_line else "")
+    else:
+        url = ""
 
     return url, headers_list, body
 
