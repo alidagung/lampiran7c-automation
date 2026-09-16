@@ -171,6 +171,7 @@ PRODUCT_PROFILES = {
         "mapping": FT_VA_MAPPING,
         "renumber": True,
         "output_name": "Lampiran 7C - Hasil UAT VA-FT.docx",
+        "result_output_name": "UAT Result - VA-FT.docx",
     },
     "QRIS": {
         "sections": QRIS_SECTIONS,
@@ -180,6 +181,7 @@ PRODUCT_PROFILES = {
         # Endpoint, Header Request, dan Request Body (disusun seperti VA).
         "request_mode": "qris",
         "output_name": "Lampiran 7C - Hasil UAT QRIS.docx",
+        "result_output_name": "UAT Result - QRIS.docx",
     },
 }
 
@@ -1625,6 +1627,264 @@ def create_lampiran_document(lampiran_data, output_path, profile=None):
 
 
 # ============================================================
+# UAT RESULT DOCUMENT GENERATOR
+# ============================================================
+
+def _add_toc_field(doc):
+    """
+    Sisipkan field Daftar Isi (TOC) Word yang otomatis ter-update.
+
+    Word tidak mengisi TOC saat dibuat via python-docx; pengguna cukup membuka
+    dokumen lalu klik "Update Table" (atau tekan F9). Kita set field TOC untuk
+    heading level 1-2.
+    """
+    p = doc.add_paragraph()
+    run = p.add_run()
+
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = 'TOC \\o "1-2" \\h \\z \\u'
+
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+
+    placeholder = OxmlElement("w:t")
+    placeholder.text = "Klik kanan di sini lalu pilih 'Update Field' untuk menampilkan Daftar Isi."
+
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+
+    run._r.append(fld_begin)
+    run._r.append(instr)
+    run._r.append(fld_sep)
+    run._r.append(placeholder)
+    run._r.append(fld_end)
+
+
+def _style_heading(paragraph, size_pt, bold=True):
+    """Terapkan font Calibri + ukuran pada run heading."""
+    for run in paragraph.runs:
+        run.font.name = FONT_NAME
+        run.font.size = Pt(size_pt)
+        run.font.bold = bold
+
+
+def _compress_headers_inline(headers_raw):
+    """
+    Padatkan blok Header menjadi SATU baris array, contoh:
+      [Content-Type=application/json, "Authorization=Bearer xxx", X-TIMESTAMP=...]
+    Item diambil apa adanya (tanpa mengubah isi), hanya dipadatkan.
+    """
+    items = []
+    for line in headers_raw.split("\n"):
+        s = line.strip().rstrip(",")
+        if not s or s in ("[", "]", "{", "}"):
+            continue
+        items.append(s)
+    return "[" + ", ".join(items) + "]"
+
+
+def _build_uat_result_case_text(remarks_text, request_mode="default"):
+    """
+    Susun isi satu case untuk UAT Result dengan aturan compress:
+      - URL     : biarkan apa adanya (per baris)
+      - Header  : di-compress menjadi satu baris array [...]
+      - Request Body & Response Body (JSON) : di-compress satu baris
+
+    Mendukung dua sumber:
+      - default (VA/FT): Remark berlabel URL:/Header:/Request:/Response:
+      - qris          : Remark format raw HTTP (parser QRIS)
+
+    Mengembalikan list baris (str) siap ditulis ke dokumen.
+    """
+    lines_out = []
+
+    if request_mode == "qris":
+        # Pisahkan Request vs Response, lalu parse blok request (raw HTTP).
+        text = (remarks_text or "").replace("\r\n", "\n").replace("\r", "\n")
+        rmatch = list(re.finditer(r"(?im)^\s*response(?:\s*body)?\s*:\s*$", text))
+        if not rmatch:
+            rmatch = list(re.finditer(r"(?i)\bresponse(?:\s*body)?\s*:", text))
+        if rmatch:
+            mm = rmatch[-1]
+            req_raw = text[:mm.start()].strip()
+            resp_raw = text[mm.end():].strip()
+        else:
+            req_raw, resp_raw = text.strip(), ""
+        url, headers_list, body = _parse_qris_request_block(req_raw)
+        if url:
+            lines_out.append("URL :")
+            lines_out.extend(url.split("\n"))
+        if headers_list:
+            lines_out.append("Header :" + "[" + ", ".join(headers_list) + "]")
+        if body:
+            lines_out.append("Request:")
+            lines_out.append(_compress_json(body))
+        if resp_raw:
+            lines_out.append("Response :")
+            lines_out.append(_compress_json(resp_raw))
+        return lines_out
+
+    # Default (VA/FT): pakai parser blok berlabel.
+    text = remarks_text.replace("\r\n", "\n").replace("\r", "\n")
+    text = _normalize_inline_markers(text)
+    blocks = _parse_remarks_blocks(text)
+
+    url_raw = blocks.get("url", "").strip()
+    headers_raw = blocks.get("headers", "").strip()
+    body_raw = blocks.get("request_body", "").strip()
+    response_raw = blocks.get("response", "").strip()
+
+    if url_raw:
+        lines_out.append("URL :")
+        lines_out.extend(url_raw.split("\n"))
+    if headers_raw:
+        lines_out.append("Header :" + _compress_headers_inline(headers_raw))
+    if body_raw:
+        lines_out.append("Request:")
+        lines_out.append(_compress_json(body_raw))
+    if response_raw:
+        lines_out.append("Response :")
+        lines_out.append(_compress_json(response_raw))
+
+    # Fallback: kalau tidak ada blok terdeteksi, tampilkan apa adanya.
+    if not lines_out:
+        lines_out = text.strip().split("\n")
+
+    return lines_out
+
+
+def _add_case_body(doc, remarks_text, request_mode="default", tidak_dites=False):
+    """
+    Tulis isi satu case ke dokumen UAT Result, font Calibri 10.
+
+    - Jika tidak_dites: tampilkan teks Remark apa adanya (alasan tidak dites).
+    - Selain itu: susun dengan aturan compress (URL biarkan, Header & body
+      di-compress) via _build_uat_result_case_text.
+    """
+    if tidak_dites:
+        out_lines = (remarks_text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    else:
+        out_lines = _build_uat_result_case_text(remarks_text, request_mode=request_mode)
+
+    for line in out_lines:
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.space_before = Pt(0)
+        pf.space_after = Pt(0)
+        pf.line_spacing = 1.0
+        run = p.add_run(line)
+        run.font.name = FONT_NAME
+        run.font.size = Pt(10)
+
+
+def _clean_case_title(langkah_tes, product_key):
+    """
+    Bersihkan judul case untuk UAT Result.
+
+    Untuk QRIS, kolom Langkah Tes kadang diawali prefix nomor pengiring seperti
+    "18,1 " atau "3,1 " -> dibuang agar judul rapi (mis. "Access Token Invalid").
+    Untuk FT/VA, Langkah Tes sudah bersih -> dipakai apa adanya.
+    """
+    judul = (langkah_tes or "").strip()
+    if product_key == "QRIS":
+        # Buang prefix pola "<angka>,<angka> " atau "<angka>.<angka> " di awal.
+        judul = re.sub(r"^\d+[.,]\d+\s+", "", judul).strip()
+    return judul
+
+
+def build_uat_result_document(uat_data, title=None, product_key="FT_VA"):
+    """
+    Bangun dokumen UAT Result (.docx) dari data mentah UAT Script.
+
+    Format (mengikuti contoh):
+      - Judul dokumen
+      - Daftar Isi otomatis (TOC field Word)
+      - Untuk SETIAP section (semua, tanpa skip):
+          * Heading 1 = nama section
+          * Untuk SETIAP case:
+              - Heading 2 = "{nomor_kasus} {langkah_tes}"
+              - Isi Remark APA ADANYA (URL/Header/Request/Response) atau, bila
+                Tidak dites, teks alasannya (juga dari Remark).
+
+    Args:
+        uat_data: dict hasil read_uat_script() (kunci = nama section)
+        title: judul dokumen (opsional)
+
+    Returns:
+        docx.Document
+    """
+    doc = Document()
+
+    # Font default dokumen (Calibri)
+    style = doc.styles['Normal']
+    style.font.name = FONT_NAME
+    style.font.size = Pt(10)
+    rpr = style.element.get_or_add_rPr()
+    rfonts = rpr.get_or_add_rFonts()
+    rfonts.set(qn("w:ascii"), FONT_NAME)
+    rfonts.set(qn("w:hAnsi"), FONT_NAME)
+    rfonts.set(qn("w:cs"), FONT_NAME)
+
+    # Judul dokumen
+    doc_title = title or "UAT Result"
+    tp = doc.add_paragraph()
+    tp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    tr = tp.add_run(doc_title)
+    tr.font.name = FONT_NAME
+    tr.font.size = Pt(14)
+    tr.font.bold = True
+
+    # Daftar Isi
+    toc_head = doc.add_paragraph()
+    tch = toc_head.add_run("Daftar Isi")
+    tch.font.name = FONT_NAME
+    tch.font.size = Pt(12)
+    tch.font.bold = True
+    _add_toc_field(doc)
+
+    doc.add_page_break()
+
+    # Body: setiap section & case
+    # Mode parsing Remark mengikuti produk (QRIS: raw HTTP; lainnya: berlabel).
+    request_mode = PRODUCT_PROFILES.get(product_key, {}).get("request_mode", "default")
+
+    for section_name, rows in uat_data.items():
+        if not rows:
+            continue
+        # Heading 1 = section
+        h1 = doc.add_heading(section_name, level=1)
+        _style_heading(h1, 13)
+
+        for row in rows:
+            nomor = row.get('nomor_kasus_tes', '')
+            judul = _clean_case_title(row.get('langkah_tes', ''), product_key)
+            heading_text = f"{nomor} {judul}".strip()
+
+            h2 = doc.add_heading(heading_text, level=2)
+            _style_heading(h2, 11)
+
+            remarks = row.get('remarks', '') or ""
+            hasil = str(row.get('hasil_aktual', '')).strip().lower()
+            tidak_dites = hasil in ("tidak dites", "belum dites", "siap dites", "butuh konfirmasi")
+
+            if remarks.strip() and remarks.strip().lower() != "none":
+                _add_case_body(doc, remarks, request_mode=request_mode, tidak_dites=tidak_dites)
+            else:
+                # Tidak ada Remark: beri catatan singkat
+                p = doc.add_paragraph()
+                run = p.add_run("(Tidak ada data)")
+                run.font.name = FONT_NAME
+                run.font.size = Pt(10)
+                run.italic = True
+
+    return doc
+
+
+# ============================================================
 # API REUSABLE (dipakai aplikasi web)
 # ============================================================
 
@@ -1693,6 +1953,55 @@ def convert_uat_to_lampiran_bytes(source, product=None):
     buffer.seek(0)
     output_name = PRODUCT_PROFILES[product_key].get("output_name", OUTPUT_FILENAME)
     return buffer.getvalue(), stats, warnings, product_key, output_name
+
+
+def convert_uat_to_result(source, product=None):
+    """
+    Konversi UAT Script (Excel) menjadi dokumen UAT Result (Word).
+
+    Berbeda dari Lampiran 7C: UAT Result menampilkan SEMUA case & SEMUA section
+    apa adanya (dokumen naratif per-case + Daftar Isi), tanpa skip section.
+
+    Args:
+        source: path file (str/Path) ATAU bytes/file-like berisi .xlsx
+        product: "FT_VA"/"QRIS"/None (untuk penamaan output & judul; isi dokumen
+            tetap SEMUA section dari file).
+
+    Returns:
+        tuple: (doc, product_key)
+    """
+    import io
+
+    if isinstance(source, (bytes, bytearray)):
+        source = io.BytesIO(source)
+
+    uat_data = read_uat_script(source)
+
+    if product and product != "AUTO" and product in PRODUCT_PROFILES:
+        product_key = product
+    else:
+        product_key = detect_product(uat_data)
+
+    title = "UAT Result"
+    doc = build_uat_result_document(uat_data, title=title, product_key=product_key)
+    return doc, product_key
+
+
+def convert_uat_to_result_bytes(source, product=None):
+    """
+    Sama seperti convert_uat_to_result(), tetapi mengembalikan bytes .docx.
+
+    Returns:
+        tuple: (docx_bytes, product_key, output_name)
+    """
+    import io
+
+    doc, product_key = convert_uat_to_result(source, product=product)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    output_name = PRODUCT_PROFILES[product_key].get("result_output_name", "UAT Result.docx")
+    return buffer.getvalue(), product_key, output_name
 
 
 # ============================================================
