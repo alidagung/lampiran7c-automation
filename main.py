@@ -371,14 +371,30 @@ def read_uat_script(filepath):
     current_section = None
     rows_list = list(ws.iter_rows(min_row=1, values_only=True))
 
-    # Identifikasi header row (baris dengan label kolom)
-    # Cek kolom B (index 1) untuk label "Kategori Tes" atau similar
+    # Identifikasi header row (baris dengan label kolom TABEL sebenarnya).
+    # PENTING: jangan sampai tertukar dengan blok metadata di atas tabel yang
+    # juga memakai kata "Kategori" (mis. baris "Kategori | Simulasi").
+    # Header tabel sejati dikenali bila kolom B = "Kategori/No" DAN kolom C
+    # memuat "Nama Modul" DAN kolom E memuat "Nomor Kasus Tes" (atau mirip).
     header_row_idx = 0
     for idx, row in enumerate(rows_list):
         if not row or len(row) <= COL_KATEGORI_TES:
             continue
-        cell_val = get_cell_value(row, COL_KATEGORI_TES)
-        if cell_val.lower() in ['kategori tes', 'kategori', 'no']:
+        b = get_cell_value(row, COL_KATEGORI_TES).lower()
+        c = get_cell_value(row, COL_NAMA_MODUL).lower()
+        e = get_cell_value(row, COL_NOMOR_KASUS_TES).lower()
+        f = get_cell_value(row, COL_LANGKAH_TES).lower()
+        # Header sejati: label kolom lengkap muncul bersama pada satu baris.
+        is_real_header = (
+            b in ("kategori", "kategori tes", "no")
+            and "nama modul" in c
+            and ("nomor kasus" in e or "no kasus" in e)
+        )
+        if is_real_header:
+            header_row_idx = idx
+            break
+        # Fallback longgar: minimal ada "nomor kasus" + "langkah tes" di baris.
+        if ("nomor kasus" in e) and ("langkah" in f):
             header_row_idx = idx
             break
 
