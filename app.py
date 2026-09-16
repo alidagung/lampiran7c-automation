@@ -80,18 +80,7 @@ elif selected_product == "QRIS":
 else:
     st.caption("🔎 Mode **Otomatis** — produk ditentukan dari isi file.")
 
-# Jenis dokumen keluaran
-output_type = st.radio(
-    "Jenis dokumen yang dibuat",
-    options=["Lampiran 7C", "UAT Result"],
-    index=0,
-    horizontal=True,
-    help=(
-        "**Lampiran 7C**: tabel skenario hasil uji fungsional (untuk laporan ASPI). "
-        "**UAT Result**: dokumen naratif per-case (semua case & semua section) "
-        "lengkap dengan Daftar Isi."
-    ),
-)
+st.caption("📄 Sekali proses akan menghasilkan **2 dokumen**: Lampiran 7C dan UAT Result.")
 
 uploaded_file = st.file_uploader(
     "Pilih file UAT Script (.xlsx)",
@@ -111,67 +100,64 @@ if uploaded_file is not None:
 st.subheader("2. Proses")
 
 process_clicked = st.button(
-    f"🚀 Proses & Buat {output_type}",
+    "🚀 Proses & Buat Lampiran 7C + UAT Result",
     type="primary",
     disabled=(uploaded_file is None),
     use_container_width=True,
 )
 
 # Simpan hasil di session_state agar tombol unduh tetap muncul setelah rerun
-if "result_bytes" not in st.session_state:
-    st.session_state.result_bytes = None
+if "lampiran_bytes" not in st.session_state:
+    st.session_state.lampiran_bytes = None
+    st.session_state.lampiran_name = None
+    st.session_state.result_docx_bytes = None
+    st.session_state.result_docx_name = None
     st.session_state.result_stats = None
     st.session_state.result_warnings = None
     st.session_state.result_product = None
-    st.session_state.result_output_name = None
-    st.session_state.result_kind = None
 
 if process_clicked and uploaded_file is not None:
     try:
-        with st.spinner("Memproses file, mohon tunggu..."):
+        with st.spinner("Memproses file, membuat 2 dokumen..."):
             file_bytes = uploaded_file.getvalue()
-            if output_type == "UAT Result":
-                docx_bytes, product_key, output_name = convert_uat_to_result_bytes(
-                    file_bytes, product=selected_product
-                )
-                stats, warnings = None, None
-            else:
-                docx_bytes, stats, warnings, product_key, output_name = convert_uat_to_lampiran_bytes(
-                    file_bytes, product=selected_product
-                )
+            # 1) Lampiran 7C
+            lampiran_bytes, stats, warnings, product_key, lampiran_name = (
+                convert_uat_to_lampiran_bytes(file_bytes, product=selected_product)
+            )
+            # 2) UAT Result
+            result_bytes, _pk2, result_name = convert_uat_to_result_bytes(
+                file_bytes, product=selected_product
+            )
 
-        st.session_state.result_bytes = docx_bytes
+        st.session_state.lampiran_bytes = lampiran_bytes
+        st.session_state.lampiran_name = lampiran_name
+        st.session_state.result_docx_bytes = result_bytes
+        st.session_state.result_docx_name = result_name
         st.session_state.result_stats = stats
         st.session_state.result_warnings = warnings
         st.session_state.result_product = product_key
-        st.session_state.result_output_name = output_name
-        st.session_state.result_kind = output_type
 
         # Info produk yang dipakai (berguna terutama pada mode Otomatis)
         st.info(f"Produk yang diproses: **{PRODUCT_LABEL.get(product_key, product_key)}** "
-                f"— dokumen: **{output_type}**")
+                f"— dibuat: **Lampiran 7C** & **UAT Result**")
 
-        if output_type == "UAT Result":
-            st.success("Berhasil! Dokumen **UAT Result** dibuat. "
-                       "Buka di Word lalu klik kanan pada Daftar Isi → *Update Field* "
-                       "untuk menampilkan nomor halaman.")
+        total = sum(stats.values())
+        if total == 0:
+            st.warning(
+                "File berhasil diproses, tetapi **tidak ada data hasil UAT** "
+                "yang ditemukan. Periksa kembali isi file UAT Script Anda "
+                "atau pastikan jenis produk yang dipilih sudah tepat."
+            )
         else:
-            total = sum(stats.values())
-            if total == 0:
-                st.warning(
-                    "File berhasil diproses, tetapi **tidak ada data hasil UAT** "
-                    "yang ditemukan. Periksa kembali isi file UAT Script Anda "
-                    "atau pastikan jenis produk yang dipilih sudah tepat."
-                )
-            else:
-                st.success(f"Berhasil! Total **{total} baris** data dipindahkan "
-                           f"ke Lampiran 7C.")
+            st.success(f"Berhasil! Total **{total} baris** data untuk Lampiran 7C. "
+                       "UAT Result juga dibuat (buka di Word → klik kanan Daftar Isi → "
+                       "*Update Field* untuk nomor halaman).")
     except Exception as e:  # noqa: BLE001 - tampilkan pesan error ramah pengguna
-        st.session_state.result_bytes = None
+        st.session_state.lampiran_bytes = None
+        st.session_state.result_docx_bytes = None
         st.session_state.result_stats = None
         st.session_state.result_warnings = None
         st.session_state.result_product = None
-        st.session_state.result_kind = None
         st.error(
             "Gagal memproses file. Pastikan file yang diunggah adalah "
             "UAT Script (.xlsx) dengan format yang benar."
@@ -202,11 +188,11 @@ elif st.session_state.get("result_stats") is not None:
 # LANGKAH 3 — RINGKASAN & UNDUH
 # ============================================================
 
-if st.session_state.result_bytes is not None:
+if st.session_state.lampiran_bytes is not None:
     st.divider()
     st.subheader("3. Ringkasan & unduh")
 
-    # Ringkasan section hanya relevan untuk Lampiran 7C (punya stats).
+    # Ringkasan section (dari Lampiran 7C)
     if st.session_state.result_stats is not None:
         stats = st.session_state.result_stats
         used_product = st.session_state.get("result_product") or "FT_VA"
@@ -231,22 +217,38 @@ if st.session_state.result_bytes is not None:
         col1.metric("Total baris data", total)
         col2.metric("Layanan ditampilkan", jumlah_layanan)
 
-    # Tombol unduh (untuk Lampiran 7C maupun UAT Result)
-    kind = st.session_state.get("result_kind") or "Lampiran 7C"
+    # Dua tombol unduh: Lampiran 7C & UAT Result
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_name = st.session_state.get("result_output_name") or OUTPUT_FILENAME
-    download_name = base_name.replace(".docx", f" {timestamp}.docx")
-    st.download_button(
-        f"⬇️ Unduh {kind} (.docx)",
-        data=st.session_state.result_bytes,
-        file_name=download_name,
-        mime=(
-            "application/vnd.openxmlformats-officedocument."
-            "wordprocessingml.document"
-        ),
-        type="primary",
-        use_container_width=True,
+    mime_docx = (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
+
+    lamp_name = (st.session_state.get("lampiran_name") or OUTPUT_FILENAME).replace(
+        ".docx", f" {timestamp}.docx"
+    )
+    res_name = (st.session_state.get("result_docx_name") or "UAT Result.docx").replace(
+        ".docx", f" {timestamp}.docx"
+    )
+
+    dl1, dl2 = st.columns(2)
+    with dl1:
+        st.download_button(
+            "⬇️ Unduh Lampiran 7C (.docx)",
+            data=st.session_state.lampiran_bytes,
+            file_name=lamp_name,
+            mime=mime_docx,
+            type="primary",
+            use_container_width=True,
+        )
+    with dl2:
+        st.download_button(
+            "⬇️ Unduh UAT Result (.docx)",
+            data=st.session_state.result_docx_bytes,
+            file_name=res_name,
+            mime=mime_docx,
+            type="secondary",
+            use_container_width=True,
+        )
 
 
 # ============================================================
