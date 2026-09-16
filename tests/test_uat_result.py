@@ -81,6 +81,19 @@ class TestBuildUatResult:
         txt = "\n".join(_para_texts(doc))
         assert "Tidak dites karena X." in txt
 
+    def test_tidak_dites_jadi_satu_baris(self):
+        # Remark tidak dites yang punya line break harus digabung jadi 1 baris.
+        uat = {
+            "Balance Services": [
+                {"nomor_kasus_tes": "1.8", "langkah_tes": "Account tutup",
+                 "hasil_aktual": "Tidak dites",
+                 "remarks": "Tidak dites karena igate tidak ada\nvalidasi sehingga akan tetap muncul\nbalance dari account tersebut"},
+            ],
+        }
+        doc = build_uat_result_document(uat, product_key="FT_VA")
+        expected = "Tidak dites karena igate tidak ada validasi sehingga akan tetap muncul balance dari account tersebut"
+        assert any(p.text.strip() == expected for p in doc.paragraphs)
+
     def test_ada_daftar_isi_toc(self):
         # Field TOC diselipkan -> cek ada instruksi TOC dalam XML dokumen
         doc = build_uat_result_document(self._mini_uat(), product_key="FT_VA")

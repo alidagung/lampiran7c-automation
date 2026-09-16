@@ -1782,7 +1782,11 @@ def _add_case_body(doc, remarks_text, request_mode="default", tidak_dites=False)
       di-compress) via _build_uat_result_case_text.
     """
     if tidak_dites:
-        out_lines = (remarks_text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        # Alasan "Tidak dites" dijadikan SATU baris/paragraf yang mengalir:
+        # gabungkan line break jadi spasi, lalu rapikan spasi ganda.
+        alasan = (remarks_text or "").replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+        alasan = re.sub(r"\s+", " ", alasan).strip()
+        out_lines = [alasan]
     else:
         out_lines = _build_uat_result_case_text(remarks_text, request_mode=request_mode)
 
