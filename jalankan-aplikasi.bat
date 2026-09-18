@@ -20,6 +20,26 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM ============================================================
+REM  AMBIL UPDATE TERBARU OTOMATIS (git pull)
+REM  Jadi Anda tidak perlu ketik "git pull" manual lagi.
+REM ============================================================
+git --version >nul 2>&1
+if errorlevel 1 (
+    echo [INFO] Git tidak ditemukan - lewati update otomatis.
+) else (
+    echo [INFO] Mengecek pembaruan dari GitHub...
+    git pull --ff-only
+    if errorlevel 1 (
+        echo [PERINGATAN] Gagal mengambil update otomatis.
+        echo Aplikasi tetap dijalankan dengan versi yang ada di komputer ini.
+        echo.
+    ) else (
+        echo [OK] Kode sudah versi terbaru.
+        echo.
+    )
+)
+
 echo ============================================================
 echo   APLIKASI LAMPIRAN 7C sedang dijalankan...
 echo.
