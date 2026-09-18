@@ -850,6 +850,16 @@ def split_request_response_qris(remarks_text):
 
     text = remarks_text.replace("\r\n", "\n").replace("\r", "\n")
 
+    # DETEKSI FORMAT:
+    # Sebagian mitra QRIS memakai format BERLABEL (mis. "Request headers:" /
+    # "Request body:" / "Response body:" dengan header berbentuk JSON object),
+    # PERSIS seperti format VA. Bila terdeteksi, gunakan parser VA yang sudah
+    # menangani label & header JSON dengan benar (menghindari header salah
+    # masuk ke Request Body).
+    if re.search(r"(?im)^\s*request\s+header", text) or re.search(r"(?im)^\s*request\s+body", text):
+        return split_request_response(remarks_text)
+
+    # Selain itu: format "raw HTTP" (mis. Kirimo) -> parser QRIS khusus.
     # Pisahkan Request vs Response pada penanda "Response:" (utamakan baris utuh).
     matches = list(re.finditer(r"(?im)^\s*response(?:\s*body)?\s*:\s*$", text))
     if not matches:
@@ -1039,6 +1049,13 @@ def detect_anomalies(row_data, display_no=None, request_mode="default"):
         return warnings
 
     text = remarks.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Bila QRIS tapi formatnya BERLABEL (Request headers:/Request body:),
+    # perlakukan seperti format default (parser VA) agar deteksi akurat.
+    if request_mode == "qris" and (
+        re.search(r"(?im)^\s*request\s+header", text) or re.search(r"(?im)^\s*request\s+body", text)
+    ):
+        request_mode = "default"
 
     if request_mode == "qris":
         # Ekstrak bagian memakai parser QRIS (format raw HTTP).
@@ -1719,8 +1736,12 @@ def _build_uat_result_case_text(remarks_text, request_mode="default"):
     lines_out = []
 
     if request_mode == "qris":
-        # Pisahkan Request vs Response, lalu parse blok request (raw HTTP).
         text = (remarks_text or "").replace("\r\n", "\n").replace("\r", "\n")
+        # Bila format BERLABEL (Request headers:/Request body:) -> pakai jalur
+        # parser VA (mendukung header JSON object), lalu susun dgn compress.
+        if re.search(r"(?im)^\s*request\s+header", text) or re.search(r"(?im)^\s*request\s+body", text):
+            return _build_uat_result_case_text(remarks_text, request_mode="default")
+        # Format raw HTTP (Kirimo): pisahkan Request vs Response, parse blok.
         rmatch = list(re.finditer(r"(?im)^\s*response(?:\s*body)?\s*:\s*$", text))
         if not rmatch:
             rmatch = list(re.finditer(r"(?i)\bresponse(?:\s*body)?\s*:", text))

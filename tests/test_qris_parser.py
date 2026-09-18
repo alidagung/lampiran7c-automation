@@ -81,6 +81,55 @@ class TestSplitQris:
         assert "Response Body:" not in req
 
 
+REMARKS_QRIS_BERLABEL = (
+    "Url : https://ob-sandbox.banksampoerna.co.id/snap-qris/v1.1/qr/qr-mpm-generate\n\n"
+    "Request headers: {\n"
+    '  "Authorization": ["Bearer DUMMY_TOKEN"],\n'
+    '  "CHANNEL-ID": ["CH001"],\n'
+    '  "Content-Type": ["application/json"],\n'
+    '  "X-PARTNER-ID": ["XALLURE"]\n'
+    "}\n"
+    "Request body: {\n"
+    '  "merchantId": "9360052300000003681",\n'
+    '  "partnerReferenceNo": "148IYTKXC2WATM822UVFT084B"\n'
+    "}\n"
+    "Response body: {\n"
+    '  "responseCode": "4014701",\n'
+    '  "responseMessage": "Invalid token (B2B)"\n'
+    "}"
+)
+
+
+class TestQrisFormatBerlabel:
+    """
+    Mitra QRIS lain (mis. XALLURE) memakai format BERLABEL dengan header JSON
+    object. Header HARUS masuk ke Header Request, BUKAN ke Request Body.
+    """
+
+    def test_header_json_masuk_header_bukan_body(self):
+        req, resp = split_request_response_qris(REMARKS_QRIS_BERLABEL)
+        # Header Request berisi item header
+        assert "Header Request:" in req
+        assert "Authorization=Bearer DUMMY_TOKEN" in req
+        assert "X-PARTNER-ID=XALLURE" in req
+        # Request Body berisi field body, BUKAN Authorization
+        assert "Request Body:" in req
+        # Pastikan Authorization TIDAK berada di blok Request Body
+        body_part = req.split("Request Body:")[1]
+        assert "Authorization" not in body_part
+        assert "merchantId" in body_part
+
+    def test_url_terbaca(self):
+        req, resp = split_request_response_qris(REMARKS_QRIS_BERLABEL)
+        assert "qr-mpm-generate" in req
+        assert "URL Endpoint:" in req
+
+    def test_response_dipisah(self):
+        req, resp = split_request_response_qris(REMARKS_QRIS_BERLABEL)
+        assert resp.startswith("Response Body:")
+        assert "4014701" in resp
+
+
 class TestDetectAnomaliesQris:
     def test_qris_data_lengkap_tidak_ada_warning_json(self):
         # Request Body JSON valid; response raw HTTP (tidak dicek JSON di QRIS)
