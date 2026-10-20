@@ -549,6 +549,17 @@ def _parse_remarks_blocks(text):
         if name not in blocks and content:
             blocks[name] = content
 
+    # Fallback URL tanpa label: sebagian mitra menaruh URL di baris paling awal
+    # TANPA penanda "URL:" (langsung "https://..." atau request line HTTP).
+    # Bila blok 'url' belum terisi, ambil dari teks sebelum label pertama.
+    if not blocks.get("url"):
+        first_label_idx = label_positions[0][0] if label_positions else len(lines)
+        head_lines = [ln.strip() for ln in lines[:first_label_idx] if ln.strip()]
+        for ln in head_lines:
+            if re.match(r"(?i)^https?://", ln) or re.match(r"^[A-Z]+\s+\S+\s+HTTP/\d", ln):
+                blocks["url"] = ln
+                break
+
     return blocks
 
 

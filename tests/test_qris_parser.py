@@ -130,6 +130,39 @@ class TestQrisFormatBerlabel:
         assert "4014701" in resp
 
 
+REMARKS_QRIS_URL_TANPA_LABEL = (
+    "https://ob-sandbox.banksampoerna.co.id/snap-qris/v1.1/qr/qr-mpm-generate\n\n"
+    "Header Request:\n\n"
+    "Content-Type: application/json\n"
+    "X-PARTNER-ID: CASHUPDEV\n"
+    "Authorization: Bearer xyz\n\n"
+    "Request Body: \n\n"
+    '{"partnerReferenceNo":"0078197019","merchantId":"9360"}\n\n'
+    "Response Body:\n\n"
+    '{"responseCode":"4014701"}'
+)
+
+
+class TestQrisUrlTanpaLabel:
+    """
+    Sebagian mitra (mis. Cashlez) menaruh URL di baris paling awal TANPA label
+    'URL:'. URL tetap harus terbaca sebagai URL Endpoint.
+    """
+
+    def test_url_di_baris_awal_terbaca(self):
+        req, resp = split_request_response_qris(REMARKS_QRIS_URL_TANPA_LABEL)
+        assert "URL Endpoint:" in req
+        assert "qr-mpm-generate" in req
+
+    def test_header_dan_body_tetap_benar(self):
+        req, resp = split_request_response_qris(REMARKS_QRIS_URL_TANPA_LABEL)
+        assert "Header Request:" in req
+        assert "X-PARTNER-ID=CASHUPDEV" in req
+        body_part = req.split("Request Body:")[1]
+        assert "merchantId" in body_part
+        assert "X-PARTNER-ID" not in body_part
+
+
 class TestDetectAnomaliesQris:
     def test_qris_data_lengkap_tidak_ada_warning_json(self):
         # Request Body JSON valid; response raw HTTP (tidak dicek JSON di QRIS)
