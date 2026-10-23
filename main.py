@@ -1981,11 +1981,29 @@ def convert_uat_to_lampiran(source, product=None):
     )
 
     stats = {}
+    # Rincian status hasil per section: jumlah PASS / NOT PASS / N/A.
+    status_counts = {}
     for section_name, rows in lampiran_data.items():
         stats[section_name] = sum(1 for r in rows if r is not None)
+        pass_n = not_pass_n = na_n = 0
+        for r in rows:
+            if r is None:
+                continue
+            val = str(r.get("result", "")).strip().upper()
+            if val == "PASS":
+                pass_n += 1
+            elif val == "NOT PASS":
+                not_pass_n += 1
+            elif val == "N/A":
+                na_n += 1
+        status_counts[section_name] = {
+            "PASS": pass_n,
+            "NOT PASS": not_pass_n,
+            "N/A": na_n,
+        }
 
     doc = build_lampiran_document(lampiran_data, profile=profile)
-    return doc, stats, warnings, product_key
+    return doc, stats, warnings, product_key, status_counts
 
 
 def convert_uat_to_lampiran_bytes(source, product=None):
@@ -1994,17 +2012,18 @@ def convert_uat_to_lampiran_bytes(source, product=None):
     bentuk bytes (siap dikirim sebagai unduhan di aplikasi web).
 
     Returns:
-        tuple: (docx_bytes, stats, warnings, product_key, output_name)
-            output_name : nama file .docx yang disarankan sesuai produk
+        tuple: (docx_bytes, stats, warnings, product_key, output_name, status_counts)
+            output_name   : nama file .docx yang disarankan sesuai produk
+            status_counts : dict {section: {PASS, NOT PASS, N/A}} untuk chart
     """
     import io
 
-    doc, stats, warnings, product_key = convert_uat_to_lampiran(source, product=product)
+    doc, stats, warnings, product_key, status_counts = convert_uat_to_lampiran(source, product=product)
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
     output_name = PRODUCT_PROFILES[product_key].get("output_name", OUTPUT_FILENAME)
-    return buffer.getvalue(), stats, warnings, product_key, output_name
+    return buffer.getvalue(), stats, warnings, product_key, output_name, status_counts
 
 
 def convert_uat_to_result(source, product=None):

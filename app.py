@@ -30,6 +30,12 @@ PRODUCT_OPTIONS = {
 }
 PRODUCT_LABEL = {"FT_VA": "Fund Transfer & Virtual Account (VA/FT)", "QRIS": "QRIS"}
 
+# Palet warna brand
+BRAND = "#ED7D31"       # oranye ASPI
+BRAND_DARK = "#C55A11"
+OK_COLOR = "#2e7d32"
+WARN_COLOR = "#b26a00"
+
 
 # ============================================================
 # KONFIGURASI HALAMAN
@@ -44,67 +50,96 @@ st.set_page_config(
 
 
 # ============================================================
-# CSS KUSTOM (tema oranye ASPI, kartu, tombol)
+# CSS KUSTOM (tema korporat, kartu, bayangan halus)
 # ============================================================
 
 st.markdown(
-    """
+    f"""
     <style>
-    /* Lebar konten utama dibatasi agar nyaman dibaca */
-    .block-container { padding-top: 2rem; max-width: 1100px; }
+    .block-container {{ padding-top: 1.6rem; max-width: 1180px; }}
 
     /* Hero header */
-    .hero {
-        background: linear-gradient(120deg, #ED7D31 0%, #C55A11 100%);
-        padding: 28px 34px;
-        border-radius: 16px;
-        color: #ffffff;
-        box-shadow: 0 8px 24px rgba(237,125,49,0.28);
-        margin-bottom: 8px;
-    }
-    .hero h1 { color:#fff; font-size: 1.9rem; margin: 0 0 6px 0; font-weight: 800; }
-    .hero p  { color: #fff8f2; font-size: 1.02rem; margin: 0; opacity: 0.95; }
+    .hero {{
+        background: linear-gradient(120deg, {BRAND} 0%, {BRAND_DARK} 100%);
+        padding: 30px 38px; border-radius: 18px; color: #fff;
+        box-shadow: 0 12px 30px rgba(237,125,49,0.30);
+        display: flex; align-items: center; gap: 22px;
+    }}
+    .hero-logo {{
+        width: 64px; height: 64px; border-radius: 16px;
+        background: rgba(255,255,255,0.18);
+        display:flex; align-items:center; justify-content:center;
+        font-size: 34px; flex-shrink: 0;
+        border: 1px solid rgba(255,255,255,0.35);
+    }}
+    .hero h1 {{ color:#fff; font-size: 1.85rem; margin: 0 0 4px 0; font-weight: 800; letter-spacing:-0.3px; }}
+    .hero p  {{ color:#fff8f2; font-size: 1.0rem; margin: 0; opacity: 0.96; }}
+
+    /* Kartu umum */
+    .card {{
+        background: var(--secondary-background-color, #ffffff);
+        border: 1px solid rgba(0,0,0,0.07);
+        border-radius: 14px; padding: 18px 20px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+        margin-bottom: 4px;
+    }}
 
     /* Kartu langkah */
-    .step-card {
-        background: var(--secondary-background-color, #f7f7f9);
+    .step-card {{
+        background: var(--secondary-background-color, #faf8f6);
         border: 1px solid rgba(0,0,0,0.06);
-        border-left: 5px solid #ED7D31;
-        border-radius: 12px;
-        padding: 14px 18px;
-        margin-bottom: 6px;
-    }
-    .step-num {
+        border-left: 5px solid {BRAND};
+        border-radius: 12px; padding: 13px 18px; margin: 10px 0 2px 0;
+    }}
+    .step-num {{
         display:inline-flex; align-items:center; justify-content:center;
         width: 26px; height: 26px; border-radius: 50%;
-        background:#ED7D31; color:#fff; font-weight:700; font-size:0.85rem;
-        margin-right: 8px;
-    }
-    .step-title { font-weight: 700; font-size: 1.05rem; }
+        background:{BRAND}; color:#fff; font-weight:700; font-size:0.85rem; margin-right: 10px;
+    }}
+    .step-title {{ font-weight: 700; font-size: 1.08rem; }}
 
-    /* Badge produk */
-    .badge {
-        display:inline-block; padding: 3px 12px; border-radius: 999px;
-        font-size: 0.8rem; font-weight: 700; letter-spacing: .2px;
-    }
-    .badge-ftva { background:#e8f0fe; color:#1a56db; }
-    .badge-qris { background:#e9f9ee; color:#177245; }
-    .badge-auto { background:#fdf0e6; color:#C55A11; }
+    /* Badge */
+    .badge {{ display:inline-block; padding: 3px 13px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; }}
+    .badge-ftva {{ background:#e8f0fe; color:#1a56db; }}
+    .badge-qris {{ background:#e9f9ee; color:#177245; }}
+    .badge-auto {{ background:#fdf0e6; color:{BRAND_DARK}; }}
 
-    /* Tombol lebih tebal */
-    .stButton>button, .stDownloadButton>button {
-        border-radius: 10px; font-weight: 700; padding: 0.55rem 1rem;
-    }
-    /* Metric card */
-    div[data-testid="stMetric"] {
-        background: var(--secondary-background-color, #f7f7f9);
-        border: 1px solid rgba(0,0,0,0.06);
-        border-radius: 12px; padding: 12px 16px;
-    }
+    /* Stat card */
+    .stat {{
+        border-radius: 14px; padding: 16px 18px; color:#fff; text-align:left;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.10);
+    }}
+    .stat .lbl {{ font-size: 0.82rem; opacity: 0.92; font-weight:600; margin-bottom:2px; }}
+    .stat .val {{ font-size: 1.9rem; font-weight: 800; line-height:1; }}
+    .stat-pass {{ background: linear-gradient(135deg,#2e9e4f,#1e7e38); }}
+    .stat-fail {{ background: linear-gradient(135deg,#e24b4b,#c62828); }}
+    .stat-na   {{ background: linear-gradient(135deg,#f0a93b,#d9871f); }}
+    .stat-tot  {{ background: linear-gradient(135deg,#5b6b7a,#3c4753); }}
+
+    /* Tombol */
+    .stButton>button, .stDownloadButton>button {{
+        border-radius: 11px; font-weight: 700; padding: 0.6rem 1rem;
+    }}
+    div[data-testid="stMetric"] {{
+        background: var(--secondary-background-color, #faf8f6);
+        border: 1px solid rgba(0,0,0,0.06); border-radius: 12px; padding: 12px 16px;
+    }}
+    /* File uploader lebih menonjol */
+    section[data-testid="stFileUploaderDropzone"] {{
+        border: 2px dashed {BRAND}; border-radius: 14px; background: #fff8f2;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+def stat_card(label, value, kind):
+    st.markdown(
+        f'<div class="stat stat-{kind}"><div class="lbl">{label}</div>'
+        f'<div class="val">{value}</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ============================================================
@@ -112,7 +147,7 @@ st.markdown(
 # ============================================================
 
 with st.sidebar:
-    st.markdown("### 📄 Lampiran 7C ASPI")
+    st.markdown(f"<h3 style='margin-bottom:0'>📄 Lampiran 7C ASPI</h3>", unsafe_allow_html=True)
     st.caption("Automation UAT Script → Lampiran 7C & UAT Result")
     st.divider()
 
@@ -133,6 +168,7 @@ with st.sidebar:
     st.divider()
     st.caption("💡 UAT Result: buka di Word → klik kanan Daftar Isi → *Update Field* "
                "untuk memunculkan nomor halaman.")
+    st.caption("🔒 Berjalan 100% lokal — data tidak dikirim ke internet.")
 
 
 # ============================================================
@@ -142,14 +178,16 @@ with st.sidebar:
 st.markdown(
     """
     <div class="hero">
-        <h1>📄 Automation Lampiran 7C ASPI</h1>
-        <p>Ubah file UAT Script (Excel) menjadi dokumen Lampiran 7C dan UAT Result (Word)
-        secara otomatis — cukup unggah, proses, lalu unduh.</p>
+        <div class="hero-logo">📄</div>
+        <div>
+            <h1>Automation Lampiran 7C ASPI</h1>
+            <p>Ubah UAT Script (Excel) menjadi Lampiran 7C &amp; UAT Result (Word) secara otomatis —
+            unggah, proses, unduh. Mendukung Fund Transfer/VA dan QRIS.</p>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
-
 st.write("")
 
 
@@ -159,7 +197,7 @@ st.write("")
 
 st.markdown(
     '<div class="step-card"><span class="step-num">1</span>'
-    '<span class="step-title">Pilih produk & unggah file UAT Script</span></div>',
+    '<span class="step-title">Pilih produk &amp; unggah file UAT Script</span></div>',
     unsafe_allow_html=True,
 )
 
@@ -172,8 +210,8 @@ with col_a:
         index=0,
         help=(
             "Pilih 'Fund Transfer & Virtual Account' untuk UAT VA/FT, atau 'QRIS' "
-            "untuk UAT QRIS. Pilihan ini MEMAKSA konfigurasi produk yang dipakai. "
-            "Gunakan 'Deteksi otomatis' bila ingin aplikasi menebak sendiri dari isi file."
+            "untuk UAT QRIS. Pilihan ini MEMAKSA konfigurasi produk. Gunakan "
+            "'Deteksi otomatis' bila ingin aplikasi menebak sendiri dari isi file."
         ),
     )
     selected_product = PRODUCT_OPTIONS[product_label]
@@ -197,7 +235,7 @@ with col_b:
     if uploaded_file is not None:
         st.success(f"✅ **{uploaded_file.name}**  \n{uploaded_file.size / 1024:.1f} KB")
 
-st.info("📄 Sekali proses akan menghasilkan **2 dokumen**: **Lampiran 7C** dan **UAT Result**.")
+st.info("📄 Sekali proses menghasilkan **2 dokumen**: **Lampiran 7C** dan **UAT Result**.")
 
 
 # ============================================================
@@ -228,19 +266,25 @@ if "lampiran_bytes" not in st.session_state:
     st.session_state.result_stats = None
     st.session_state.result_warnings = None
     st.session_state.result_product = None
+    st.session_state.result_status = None
 
 if process_clicked and uploaded_file is not None:
     try:
-        with st.spinner("Memproses file, membuat 2 dokumen..."):
-            file_bytes = uploaded_file.getvalue()
-            # 1) Lampiran 7C
-            lampiran_bytes, stats, warnings, product_key, lampiran_name = (
-                convert_uat_to_lampiran_bytes(file_bytes, product=selected_product)
-            )
-            # 2) UAT Result
-            result_bytes, _pk2, result_name = convert_uat_to_result_bytes(
-                file_bytes, product=selected_product
-            )
+        progress = st.progress(0, text="Membaca file...")
+        file_bytes = uploaded_file.getvalue()
+
+        progress.progress(30, text="Membuat Lampiran 7C...")
+        (lampiran_bytes, stats, warnings, product_key,
+         lampiran_name, status_counts) = convert_uat_to_lampiran_bytes(
+            file_bytes, product=selected_product
+        )
+
+        progress.progress(70, text="Membuat UAT Result...")
+        result_bytes, _pk2, result_name = convert_uat_to_result_bytes(
+            file_bytes, product=selected_product
+        )
+        progress.progress(100, text="Selesai!")
+        progress.empty()
 
         st.session_state.lampiran_bytes = lampiran_bytes
         st.session_state.lampiran_name = lampiran_name
@@ -249,6 +293,7 @@ if process_clicked and uploaded_file is not None:
         st.session_state.result_stats = stats
         st.session_state.result_warnings = warnings
         st.session_state.result_product = product_key
+        st.session_state.result_status = status_counts
 
         st.toast("Dokumen berhasil dibuat!", icon="🎉")
 
@@ -262,15 +307,12 @@ if process_clicked and uploaded_file is not None:
         else:
             st.success(
                 f"Berhasil! Produk **{PRODUCT_LABEL.get(product_key, product_key)}** — "
-                f"total **{total} baris** data pada Lampiran 7C. "
-                "Kedua dokumen siap diunduh di bawah."
+                f"total **{total} baris** data pada Lampiran 7C. Hasil siap diunduh di bawah."
             )
-    except Exception as e:  # noqa: BLE001 - tampilkan pesan error ramah pengguna
-        st.session_state.lampiran_bytes = None
-        st.session_state.result_docx_bytes = None
-        st.session_state.result_stats = None
-        st.session_state.result_warnings = None
-        st.session_state.result_product = None
+    except Exception as e:  # noqa: BLE001
+        for k in ("lampiran_bytes", "result_docx_bytes", "result_stats",
+                  "result_warnings", "result_product", "result_status"):
+            st.session_state[k] = None
         st.error(
             "Gagal memproses file. Pastikan file yang diunggah adalah "
             "UAT Script (.xlsx) dengan format yang benar."
@@ -291,22 +333,32 @@ if st.session_state.lampiran_bytes is not None:
     )
 
     used_product = st.session_state.get("result_product") or "FT_VA"
+    stats = st.session_state.result_stats or {}
+    status = st.session_state.result_status or {}
+    warns = st.session_state.get("result_warnings") or []
 
-    # --- Metrik ringkas ---
-    if st.session_state.result_stats is not None:
-        stats = st.session_state.result_stats
-        total = sum(stats.values())
-        jumlah_layanan = sum(1 for v in stats.values() if v > 0)
-        warns = st.session_state.get("result_warnings") or []
+    # Hitung total status
+    tot_pass = sum(d.get("PASS", 0) for d in status.values())
+    tot_fail = sum(d.get("NOT PASS", 0) for d in status.values())
+    tot_na = sum(d.get("N/A", 0) for d in status.values())
+    tot_all = tot_pass + tot_fail + tot_na
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total baris data", total)
-        m2.metric("Layanan ditampilkan", jumlah_layanan)
-        m3.metric("Perlu dicek", len(warns))
+    # --- Kartu statistik berwarna ---
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        stat_card("Total baris", tot_all, "tot")
+    with c2:
+        stat_card("PASS", tot_pass, "pass")
+    with c3:
+        stat_card("NOT PASS", tot_fail, "fail")
+    with c4:
+        stat_card("N/A", tot_na, "na")
 
-    # --- Tab: Unduh | Ringkasan | Peringatan ---
-    tab_unduh, tab_ringkasan, tab_warning = st.tabs(
-        ["⬇️ Unduh", "📊 Ringkasan section", "⚠️ Perlu dicek"]
+    st.write("")
+
+    # --- Tab: Unduh | Grafik | Ringkasan | Perlu dicek ---
+    tab_unduh, tab_grafik, tab_ringkasan, tab_warning = st.tabs(
+        ["⬇️ Unduh", "📊 Grafik", "📋 Ringkasan section", f"⚠️ Perlu dicek ({len(warns)})"]
     )
 
     with tab_unduh:
@@ -320,50 +372,83 @@ if st.session_state.lampiran_bytes is not None:
         res_name = (st.session_state.get("result_docx_name") or "UAT Result.docx").replace(
             ".docx", f" {timestamp}.docx"
         )
-
         st.write("Kedua dokumen berhasil dibuat. Silakan unduh:")
         dl1, dl2 = st.columns(2)
         with dl1:
             st.download_button(
                 "⬇️ Lampiran 7C (.docx)",
                 data=st.session_state.lampiran_bytes,
-                file_name=lamp_name,
-                mime=mime_docx,
-                type="primary",
-                use_container_width=True,
+                file_name=lamp_name, mime=mime_docx,
+                type="primary", use_container_width=True,
             )
             st.caption("Tabel skenario hasil uji fungsional (laporan ASPI).")
         with dl2:
             st.download_button(
                 "⬇️ UAT Result (.docx)",
                 data=st.session_state.result_docx_bytes,
-                file_name=res_name,
-                mime=mime_docx,
-                type="secondary",
-                use_container_width=True,
+                file_name=res_name, mime=mime_docx,
+                type="secondary", use_container_width=True,
             )
             st.caption("Dokumen naratif per-case + Daftar Isi.")
 
-    with tab_ringkasan:
-        if st.session_state.result_stats is not None:
-            used_sections = PRODUCT_PROFILES[used_product]["sections"]
-            rows = []
-            for section_name, total_baris in used_sections:
-                terisi = stats.get(section_name, 0)
-                status = "✅ Ditampilkan" if terisi > 0 else "— Tidak dites"
-                rows.append(
+    with tab_grafik:
+        # Chart batang per section: PASS / NOT PASS / N/A
+        active = {s: d for s, d in status.items() if sum(d.values()) > 0}
+        if active:
+            st.caption("Jumlah hasil per layanan API")
+            try:
+                import pandas as pd
+                df = pd.DataFrame(
                     {
-                        "Layanan API": section_name,
-                        "Baris terisi": terisi,
-                        "Status": status,
-                    }
+                        "PASS": [active[s]["PASS"] for s in active],
+                        "NOT PASS": [active[s]["NOT PASS"] for s in active],
+                        "N/A": [active[s]["N/A"] for s in active],
+                    },
+                    index=list(active.keys()),
                 )
-            st.dataframe(rows, use_container_width=True, hide_index=True)
+                st.bar_chart(
+                    df,
+                    color=["#2e9e4f", "#e24b4b", "#f0a93b"],  # urut kolom: PASS, NOT PASS, N/A
+                    use_container_width=True,
+                    height=340,
+                )
+            except Exception:
+                # Fallback sederhana bila pandas/warna tidak tersedia
+                st.bar_chart(
+                    {
+                        "PASS": [active[s]["PASS"] for s in active],
+                        "NOT PASS": [active[s]["NOT PASS"] for s in active],
+                        "N/A": [active[s]["N/A"] for s in active],
+                    },
+                    use_container_width=True, height=340,
+                )
+            # Proporsi keseluruhan
+            if tot_all:
+                st.caption(
+                    f"Proporsi: PASS {tot_pass/tot_all*100:.0f}% · "
+                    f"NOT PASS {tot_fail/tot_all*100:.0f}% · "
+                    f"N/A {tot_na/tot_all*100:.0f}%"
+                )
         else:
-            st.caption("Tidak ada ringkasan.")
+            st.caption("Tidak ada data untuk ditampilkan.")
+
+    with tab_ringkasan:
+        used_sections = PRODUCT_PROFILES[used_product]["sections"]
+        rows = []
+        for section_name, _total in used_sections:
+            sc = status.get(section_name, {})
+            terisi = stats.get(section_name, 0)
+            rows.append({
+                "Layanan API": section_name,
+                "PASS": sc.get("PASS", 0),
+                "NOT PASS": sc.get("NOT PASS", 0),
+                "N/A": sc.get("N/A", 0),
+                "Total baris": terisi,
+                "Status": "✅ Ditampilkan" if terisi > 0 else "— Tidak dites",
+            })
+        st.dataframe(rows, use_container_width=True, hide_index=True)
 
     with tab_warning:
-        warns = st.session_state.get("result_warnings") or []
         if warns:
             st.warning(
                 f"Ditemukan **{len(warns)} hal yang perlu dicek**. "
