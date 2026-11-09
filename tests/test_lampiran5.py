@@ -105,3 +105,49 @@ class TestLampiran5:
 
     def test_qris_belum_didukung(self):
         assert L.convert_lampiran_5_bytes(_uat_bytes(), "QRIS", PEN, "u") is None
+
+
+class TestLayananDigunakan:
+    def test_aturan_tidak_dites_semua_berarti_tidak_digunakan(self):
+        uat = {
+            "Balance Services": [{"hasil_aktual": "Berhasil"}, {"hasil_aktual": "Tidak dites"}],
+            "Intrabank Transfer": [{"hasil_aktual": "Belum dites"}],      # akan digunakan
+            "RTGS Transfer": [{"hasil_aktual": "Tidak dites"}] * 3,         # tidak digunakan
+            "Transfer VA": [{"hasil_aktual": "Gagal"}],
+        }
+        assert L.layanan_digunakan(uat) == [
+            "API Balance Inquiry", "API Intrabank Transfer", "API Virtual Account"]
+
+    def test_5b_hanya_layanan_terpilih_dan_nomor_berurutan(self):
+        doc = L.build_lampiran_5b("SM-1", "u@x",
+                                  layanan_tampil=["API Balance Inquiry", "API Virtual Account"])
+        rows = doc.tables[0].rows[L.BARIS_DATA_MULAI:]
+        sub = [L._unique_cells(r)[2].text for r in rows]
+        assert sub == ["API Balance Inquiry", "API Virtual Account – Inquiry",
+                       "API Virtual Account – Payment", "API Virtual Account – Inquiry Status",
+                       "API Transaction Status Inquiry"]
+        nomor = [L._unique_cells(r)[0].text for r in rows]
+        assert nomor == ["1", "2", "2", "2", "2"]   # VA jadi No. 2 (sel gabungan)
+        assert "RTGS" not in doc.element.xml
+
+    def test_tanda_tetap_di_baris_yang_benar_setelah_disaring(self):
+        rows = L.daftar_sub_api()
+        tanda = [[True] * 4 for _ in rows]
+        idx_payment = [i for i, r in enumerate(rows) if r["sub_api"].endswith("Payment")][0]
+        tanda[idx_payment] = [False, True, True, True]
+        doc = L.build_lampiran_5b("SM-1", "u@x", tanda,
+                                  layanan_tampil=["API Balance Inquiry", "API Virtual Account"])
+        for r in doc.tables[0].rows[L.BARIS_DATA_MULAI:]:
+            c = [x.text for x in L._unique_cells(r)]
+            exp = [L.TANDA_BELUM] + [L.TANDA_SESUAI] * 3 if c[2].endswith("Payment") else [L.TANDA_SESUAI] * 4
+            assert c[4:8] == exp
+
+    def test_struktur_gabungan_tetap_valid(self):
+        from docx.oxml.ns import qn
+        doc = L.build_lampiran_5b("SM-1", "u@x", layanan_tampil=["API Intrabank Transfer"])
+        trs = doc.tables[0]._tbl.tr_lst[L.BARIS_DATA_MULAI:]
+        vals = []
+        for tr in trs:
+            vm = tr.tc_lst[0].tcPr.find(qn("w:vMerge"))
+            vals.append(None if vm is None else (vm.get(qn("w:val")) or "continue"))
+        assert vals == ["restart", "continue"]   # grup diawali 'restart'

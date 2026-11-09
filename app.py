@@ -45,6 +45,16 @@ def muat_pengaturan_5():
     return data
 
 
+@st.cache_data(show_spinner=False)
+def layanan_dari_uat(file_bytes):
+    """Layanan API yang digunakan mitra menurut UAT Script (untuk Lampiran 5B)."""
+    from main import read_uat_script
+    try:
+        return lampiran5.layanan_digunakan(read_uat_script(io.BytesIO(file_bytes)))
+    except Exception:  # noqa: BLE001 - file belum valid -> tampilkan semua
+        return lampiran5.daftar_layanan()
+
+
 def simpan_pengaturan_5(data):
     PENGATURAN_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -284,14 +294,34 @@ with st.expander("⚙️ Pengaturan Lampiran 5A & 5B (produk VA/FT)", expanded=F
         nama_2 = st.text_input("Nama penandatangan 2", value=_p5["nama_2"])
     user_devsite = st.text_input("User pada DevSite (Lampiran 5B)", value=_p5["user_devsite"])
 
+    _semua_layanan = lampiran5.daftar_layanan()
+    if uploaded_file is not None:
+        _file_bytes_5 = uploaded_file.getvalue()
+        _default_layanan = layanan_dari_uat(_file_bytes_5)
+        _key_layanan = f"layanan5b_{uploaded_file.name}_{len(_file_bytes_5)}"
+        st.caption("Layanan API di Lampiran 5B dipilih **otomatis dari UAT Script** "
+                   "(layanan yang seluruh case-nya *Tidak dites* dianggap tidak digunakan).")
+    else:
+        _default_layanan = _semua_layanan
+        _key_layanan = "layanan5b_none"
+        st.caption("Unggah UAT Script agar Layanan API terpilih otomatis.")
+    layanan_5b = st.multiselect(
+        "Layanan API yang ditampilkan di Lampiran 5B",
+        options=_semua_layanan, default=_default_layanan, key=_key_layanan,
+    )
+    if not layanan_5b:
+        st.warning("Pilih minimal satu Layanan API.")
+
     st.markdown("**Matriks Lampiran 5B** — centang = Ѵ (sudah sesuai), tidak dicentang = X")
     _rows5 = lampiran5.daftar_sub_api()
+    _idx_tampil = [i for i, r in enumerate(_rows5) if r["layanan_api"] in layanan_5b]
     matriks = st.data_editor(
-        [{"Layanan API": r["layanan_api"], "Sub API": r["sub_api"],
+        [{"Layanan API": _rows5[i]["layanan_api"], "Sub API": _rows5[i]["sub_api"],
           "Positif Request": True, "Positif Response": True,
-          "Negatif Request": True, "Negatif Response": True} for r in _rows5],
+          "Negatif Request": True, "Negatif Response": True} for i in _idx_tampil],
         disabled=["Layanan API", "Sub API"],
-        hide_index=True, use_container_width=True, key="matriks_5b",
+        hide_index=True, use_container_width=True,
+        key="matriks_5b_" + "|".join(layanan_5b),
     )
     if st.button("💾 Simpan penandatangan & user sebagai default"):
         simpan_pengaturan_5({"jabatan_1": jabatan_1, "nama_1": nama_1,
@@ -301,8 +331,11 @@ with st.expander("⚙️ Pengaturan Lampiran 5A & 5B (produk VA/FT)", expanded=F
 
 penandatangan_5 = {"jabatan_1": jabatan_1, "nama_1": nama_1,
                    "jabatan_2": jabatan_2, "nama_2": nama_2}
-tanda_5b = [[bool(r["Positif Request"]), bool(r["Positif Response"]),
-             bool(r["Negatif Request"]), bool(r["Negatif Response"])] for r in matriks]
+# Isian Ѵ/X untuk SEMUA baris template (baris yang tidak tampil = default Ѵ)
+tanda_5b = [[True] * 4 for _ in lampiran5.daftar_sub_api()]
+for _i, _r in zip(_idx_tampil, matriks):
+    tanda_5b[_i] = [bool(_r["Positif Request"]), bool(_r["Positif Response"]),
+                    bool(_r["Negatif Request"]), bool(_r["Negatif Response"])]
 
 
 # ============================================================
@@ -355,6 +388,7 @@ if process_clicked and uploaded_file is not None:
         lamp5 = lampiran5.convert_lampiran_5_bytes(
             file_bytes, product_key, penandatangan_5, user_devsite,
             tanda=tanda_5b, nomor_surat=nomor_override,
+            layanan_tampil=layanan_5b or None,
         )
         progress.progress(100, text="Selesai!")
         progress.empty()
@@ -475,6 +509,7 @@ if st.session_state.lampiran_bytes is not None:
                            "Isi nomor surat manual di *Pengaturan Lampiran 5A & 5B*, lalu proses ulang.")
             st.write(f"**Lampiran 5A & 5B** — No. `{lamp5['nomor_surat'] or '-'}` · "
                      f"{lampiran5.format_tanggal_pengujian(lamp5['tanggal'])}")
+            st.caption("Layanan API di 5B: " + (", ".join(lamp5["layanan"]) or "-"))
             a_name = lamp5["a_name"].replace(".docx", f" {timestamp}.docx")
             b_name = lamp5["b_name"].replace(".docx", f" {timestamp}.docx")
             dl3, dl4 = st.columns(2)
