@@ -652,37 +652,120 @@ def _format_headers(headers_raw):
     return "\n".join(out)
 
 
+def _json_loads_toleran(raw):
+    """
+    Parse JSON secara TOLERAN terhadap spasi/enter: karakter kontrol (mis. enter
+    di dalam string) tidak dianggap kesalahan. Spasi & enter tidak divalidasi.
+    """
+    return json.loads(raw, strict=False)
+
+
+def _json_tokens(raw):
+    """
+    Pecah teks JSON menjadi token APA ADANYA (tanpa mengubah isi):
+    string (lengkap dengan kutip), karakter struktur { } [ ] , :, serta
+    literal/angka (ditulis persis seperti di sumber). Spasi/enter DI LUAR
+    string dibuang; isi di dalam string tidak disentuh.
+    """
+    tokens = []
+    i, n = 0, len(raw)
+    structural = "{}[],:"
+    while i < n:
+        ch = raw[i]
+        if ch.isspace():
+            i += 1
+        elif ch == '"':
+            j = i + 1
+            while j < n:
+                if raw[j] == "\\":
+                    j += 2
+                    continue
+                if raw[j] == '"':
+                    break
+                j += 1
+            tokens.append(raw[i:j + 1])
+            i = j + 1
+        elif ch in structural:
+            tokens.append(ch)
+            i += 1
+        else:
+            j = i
+            while j < n and not raw[j].isspace() and raw[j] not in structural and raw[j] != '"':
+                j += 1
+            tokens.append(raw[i:j])
+            i = j
+    return tokens
+
+
 def _pretty_json(raw):
     """
-    Pretty-print (beautify) JSON dengan indentasi 2 spasi jika bisa di-parse,
-    agar mudah dibaca pada laporan. Jika gagal parse, kembalikan teks asli
-    apa adanya (sudah di-strip).
+    Beautify JSON (indentasi 2 spasi) tanpa mengubah isi: token ditulis persis
+    seperti di sumber (angka, escape, urutan key tidak berubah). Jika bukan
+    JSON valid, kembalikan teks ASLI apa adanya (spasi/enter tidak diubah).
     """
     raw = raw.strip()
     if not raw:
         return ""
     try:
-        obj = json.loads(raw)
-        return json.dumps(obj, indent=2, ensure_ascii=False)
+        _json_loads_toleran(raw)
     except (ValueError, TypeError):
-        # Bukan JSON valid -> kembalikan apa adanya
         return raw
+
+    toks = _json_tokens(raw)
+    out, indent = [], 0
+    for idx, t in enumerate(toks):
+        nxt = toks[idx + 1] if idx + 1 < len(toks) else ""
+        if t in "{[":
+            if (t == "{" and nxt == "}") or (t == "[" and nxt == "]"):
+                out.append(t)           # container kosong: {} / []
+            else:
+                indent += 1
+                out.append(t + "\n" + "  " * indent)
+        elif t in "}]":
+            prev = toks[idx - 1] if idx > 0 else ""
+            if prev in ("{", "["):
+                out.append(t)
+            else:
+                indent -= 1
+                out.append("\n" + "  " * indent + t)
+        elif t == ",":
+            out.append(",\n" + "  " * indent)
+        elif t == ":":
+            out.append(": ")
+        else:
+            out.append(t)
+    return "".join(out)
 
 
 def _compress_json(raw):
     """
-    Compress JSON menjadi satu baris tanpa spasi jika bisa di-parse.
-    Jika gagal parse, rapikan jadi satu baris (buang newline & spasi ganda).
-    Dipakai khusus untuk Response Body.
+    Compress JSON menjadi satu baris tanpa mengubah isi (token persis seperti
+    sumber; hanya spasi/enter di luar string yang dibuang).
+    Jika bukan JSON valid, kembalikan teks ASLI apa adanya: spasi & enter
+    TIDAK diubah (sama seperti hasil test), notifikasi tetap diberikan terpisah.
     """
     raw = raw.strip()
     if not raw:
         return ""
     try:
-        obj = json.loads(raw)
-        return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
+        _json_loads_toleran(raw)
     except (ValueError, TypeError):
-        return re.sub(r"\s+", " ", raw).strip()
+        return raw
+    return "".join(_json_tokens(raw))
+
+
+def _compress_response(raw):
+    """
+    Compress isi Response untuk kolom Response / UAT Result.
+    - Response raw HTTP (diawali "HTTP/", mis. QRIS Kirimo): dipadatkan jadi
+      satu baris seperti sebelumnya (format ini bukan JSON).
+    - Selain itu: _compress_json (isi JSON tidak diubah; JSON rusak dibiarkan
+      persis seperti sumber).
+    """
+    s = (raw or "").strip()
+    if s[:5].upper() == "HTTP/":
+        return re.sub(r"\s+", " ", s).strip()
+    return _compress_json(s)
 
 
 def split_request_response(remarks_text):
@@ -754,7 +837,7 @@ def split_request_response(remarks_text):
 
     # Susun bagian Response (Response Body di-compress, satu baris)
     if response_raw:
-        response_part = f"Response Body:\n{_compress_json(response_raw)}"
+        response_part = f"Response Body:\n{_compress_response(response_raw)}"
     else:
         response_part = ""
 
@@ -914,7 +997,7 @@ def split_request_response_qris(remarks_text):
         request_part = request_raw
 
     if response_raw:
-        response_part = f"Response Body:\n{_compress_json(response_raw)}"
+        response_part = f"Response Body:\n{_compress_response(response_raw)}"
     else:
         response_part = ""
 
@@ -964,7 +1047,7 @@ def split_request_response_raw(remarks_text):
     # Request: apa adanya (mentah). Response: compress bila JSON.
     request_part = request_raw
     if response_raw:
-        response_part = f"Response Body:\n{_compress_json(response_raw)}"
+        response_part = f"Response Body:\n{_compress_response(response_raw)}"
     else:
         response_part = ""
 
@@ -1026,10 +1109,44 @@ def _is_valid_json(raw):
     if not raw:
         return False
     try:
-        json.loads(raw)
+        _json_loads_toleran(raw)
         return True
     except (ValueError, TypeError):
         return False
+
+
+def _describe_json_problem(nama_bagian, raw):
+    """
+    Susun pesan notifikasi untuk JSON yang tidak valid (TIDAK mengubah data).
+
+    - Bila ada lebih dari satu blok JSON berurutan (mis. JSON Response menempel
+      setelah Request Body tanpa label "Response:"), pesan menjelaskan hal itu.
+    - Selain itu, pesan menyebut jenis kesalahan serta baris & kolomnya.
+    """
+    text = (raw or "").strip()
+    try:
+        decoder = json.JSONDecoder(strict=False)
+        _, end = decoder.raw_decode(text)
+        sisa = text[end:].strip()
+        if sisa:
+            cuplikan = re.sub(r"\s+", " ", sisa)[:45]
+            return (
+                f"{nama_bagian} bukan JSON valid (format/syntax): ada teks/blok tambahan setelah "
+                f"JSON pertama, diawali \"{cuplikan}\" (kemungkinan label Response tanpa titik dua "
+                f"atau Response menempel) - mohon cek manual."
+            )
+    except (ValueError, TypeError):
+        pass
+    try:
+        _json_loads_toleran(text)
+        return f"{nama_bagian} bukan JSON valid (format/syntax) - mohon cek manual."
+    except json.JSONDecodeError as e:
+        return (
+            f"{nama_bagian} bukan JSON valid (format/syntax): {e.msg}, "
+            f"baris {e.lineno} kolom {e.colno} - mohon cek manual."
+        )
+    except (ValueError, TypeError):
+        return f"{nama_bagian} bukan JSON valid (format/syntax) - mohon cek manual."
 
 
 def detect_anomalies(row_data, display_no=None, request_mode="default"):
@@ -1112,21 +1229,26 @@ def detect_anomalies(row_data, display_no=None, request_mode="default"):
         warnings.append(f"Kasus {kasus}: bagian Response tidak ditemukan pada Remarks.")
 
     # (3) JSON tidak valid (hanya cek jika bagiannya ada).
-    # Untuk QRIS, Request Body tetap dicek JSON (memang JSON), TETAPI Response
-    # QRIS berupa raw HTTP (status line + header + body), jadi cek JSON penuh
-    # tidak relevan -> hanya cek kekosongannya.
+    # Spasi/enter TIDAK divalidasi (parser toleran). Yang dilaporkan hanyalah
+    # kesalahan struktur JSON, lengkap dengan lokasi atau penyebab dugaan.
+    # Isi data TIDAK diubah - hanya diberi tahu agar bisa dicek manual.
     body_raw = blocks.get("request_body", "")
     if body_raw.strip() and not _is_valid_json(body_raw):
-        warnings.append(
-            f"Kasus {kasus}: Request Body bukan JSON valid (format/syntax) - mohon cek manual."
-        )
+        warnings.append(f"Kasus {kasus}: " + _describe_json_problem("Request Body", body_raw))
 
     resp_raw = blocks.get("response", "")
     if resp_raw.strip():
-        if request_mode != "qris" and not _is_valid_json(resp_raw):
-            warnings.append(
-                f"Kasus {kasus}: Response Body bukan JSON valid (format/syntax) - mohon cek manual."
-            )
+        if request_mode == "qris" and resp_raw.lstrip()[:5].upper() == "HTTP/":
+            # Response QRIS berupa raw HTTP: cek JSON pada bagian body
+            # (setelah baris kosong pertama), bila ada.
+            parts = re.split(r"\n[ \t]*\n", resp_raw.strip(), maxsplit=1)
+            http_body = parts[1].strip() if len(parts) > 1 else ""
+            if http_body and not _is_valid_json(http_body):
+                warnings.append(
+                    f"Kasus {kasus}: " + _describe_json_problem("Response Body (setelah header HTTP)", http_body)
+                )
+        elif not _is_valid_json(resp_raw):
+            warnings.append(f"Kasus {kasus}: " + _describe_json_problem("Response Body", resp_raw))
     else:
         # (4) Response kosong padahal Berhasil
         warnings.append(
@@ -1784,7 +1906,7 @@ def _build_uat_result_case_text(remarks_text, request_mode="default"):
             lines_out.append(_compress_json(body))
         if resp_raw:
             lines_out.append("Response :")
-            lines_out.append(_compress_json(resp_raw))
+            lines_out.append(_compress_response(resp_raw))
         return lines_out
 
     # Default (VA/FT): pakai parser blok berlabel.
@@ -1807,7 +1929,7 @@ def _build_uat_result_case_text(remarks_text, request_mode="default"):
         lines_out.append(_compress_json(body_raw))
     if response_raw:
         lines_out.append("Response :")
-        lines_out.append(_compress_json(response_raw))
+        lines_out.append(_compress_response(response_raw))
 
     # Fallback: kalau tidak ada blok terdeteksi, tampilkan apa adanya.
     if not lines_out:
