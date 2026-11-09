@@ -16,6 +16,7 @@ Saat ini daftar Sub API mengikuti template (produk Fund Transfer / VA). Pada 5B
 hanya Layanan API yang DIGUNAKAN mitra (menurut UAT Script) yang ditampilkan.
 """
 
+import copy
 import io
 import re
 from datetime import date
@@ -51,6 +52,16 @@ LAYANAN_KE_SECTION = {
     "API SKNBI Transfer": ("SKNBI Transfer",),
     "API Virtual Account": ("Transfer VA",),
 }
+
+# Transaction Status Inquiry = Layanan API TERSENDIRI (baris paling akhir 5B).
+# Di template asli baris ini berada di dalam grup Virtual Account; saat dibuat,
+# baris itu dikeluarkan dari grup VA dan dijadikan baris sendiri.
+LAYANAN_TSI = "API Transaction Status Inquiry"
+SUB_API_TSI = "API Transaction Status Inquiry"
+# Dianggap digunakan bila ada case dengan Nama Modul ini (section mana pun)
+# yang statusnya bukan "Tidak dites".
+MODUL_TSI = "transaction status inquiry"
+BARIS_CONTOH_TUNGGAL = "API RTGS Transfer"   # baris tanpa sel gabungan untuk disalin
 
 # Kolom matriks 5B (indeks sel pada baris data)
 KOL_USER = 3
@@ -107,6 +118,15 @@ def layanan_digunakan(uat_data):
     """
     hasil = []
     for layanan in daftar_layanan():
+        if layanan == LAYANAN_TSI:
+            dipakai = any(
+                MODUL_TSI in str(r.get("nama_modul", "")).strip().lower()
+                and str(r.get("hasil_aktual", "")).strip().lower() not in ("", "tidak dites")
+                for rows in uat_data.values() for r in rows
+            )
+            if dipakai:
+                hasil.append(layanan)
+            continue
         sections = LAYANAN_KE_SECTION.get(layanan, ())
         dipakai = any(
             str(r.get("hasil_aktual", "")).strip().lower() not in ("", "tidak dites")
@@ -189,6 +209,33 @@ def _cari_paragraf(doc, pola):
 # NILAI DEFAULT (dibaca dari template)
 # ============================================================
 
+def _template_5b():
+    """
+    Muat template 5B lalu NORMALISASI: baris "API Transaction Status Inquiry"
+    dikeluarkan dari grup Virtual Account dan ditambahkan sebagai baris
+    tersendiri di akhir tabel (format disalin dari baris tanpa sel gabungan).
+    """
+    doc = Document(str(TEMPLATE_5B))
+    table = doc.tables[0]
+    trs = list(table._tbl.tr_lst)[BARIS_DATA_MULAI:]
+
+    def teks(tc):
+        return _Cell(tc, table).text.strip()
+
+    tr_tsi = next((tr for tr in trs if teks(tr.tc_lst[2]) == SUB_API_TSI), None)
+    tr_contoh = next((tr for tr in trs if teks(tr.tc_lst[1]) == BARIS_CONTOH_TUNGGAL), None)
+    if tr_tsi is None or tr_contoh is None:
+        return doc  # template berbeda: biarkan apa adanya
+
+    baru = copy.deepcopy(tr_contoh)
+    tr_tsi.getparent().remove(tr_tsi)
+    table._tbl.append(baru)
+    sel = baru.tc_lst
+    _set_cell_text(_Cell(sel[1], table), LAYANAN_TSI)
+    _set_cell_text(_Cell(sel[2], table), SUB_API_TSI)
+    return doc
+
+
 def default_penandatangan():
     """Jabatan & nama penandatangan sesuai template 5A (untuk nilai awal form)."""
     t = Document(str(TEMPLATE_5A)).tables[0]
@@ -205,7 +252,7 @@ def daftar_sub_api():
     Daftar baris matriks 5B sesuai template:
     list of dict {no, layanan_api, sub_api, user}.
     """
-    t = Document(str(TEMPLATE_5B)).tables[0]
+    t = _template_5b().tables[0]
     rows = []
     for row in t.rows[BARIS_DATA_MULAI:]:
         cells = _unique_cells(row)
@@ -277,7 +324,7 @@ def build_lampiran_5b(nomor_surat, user_devsite, tanda=None, layanan_tampil=None
         layanan_tampil: daftar Layanan API yang ditampilkan (lainnya dihapus
                       beserta semua Sub API-nya). None = semua.
     """
-    doc = Document(str(TEMPLATE_5B))
+    doc = _template_5b()
 
     p_no = _cari_paragraf(doc, r"^\s*No\.")
     if p_no is not None:
@@ -292,8 +339,9 @@ def build_lampiran_5b(nomor_surat, user_devsite, tanda=None, layanan_tampil=None
         for col, ok in zip(KOL_TANDA, flags):
             _set_cell_text(cells[col], TANDA_SESUAI if ok else TANDA_BELUM)
 
-    if layanan_tampil is not None:
-        _saring_layanan(t, set(layanan_tampil))
+    # Saring layanan (None = semua) & nomori ulang kolom No
+    _saring_layanan(t, set(layanan_tampil) if layanan_tampil is not None
+                    else set(daftar_layanan()))
     return doc
 
 

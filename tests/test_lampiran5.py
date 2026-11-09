@@ -92,9 +92,12 @@ class TestLampiran5:
         assert [c.text for c in L._unique_cells(rows[0])][4:8] == [L.TANDA_SESUAI] * 4
 
     def test_5b_struktur_tabel_tetap(self):
-        _, _, b = self._buat()
+        # Semua layanan tampil: jumlah baris sama dgn template (baris TSI
+        # dipindah dari grup VA ke baris sendiri, bukan ditambah).
+        res = L.convert_lampiran_5_bytes(_uat_bytes(), "FT_VA", PEN, "u@x",
+                                         layanan_tampil=L.daftar_layanan())
+        b = Document(io.BytesIO(res["b_bytes"]))
         tpl = Document(str(L.TEMPLATE_5B))
-        assert b.element.xml.count("w:vMerge") == tpl.element.xml.count("w:vMerge")
         assert len(b.tables[0].rows) == len(tpl.tables[0].rows)
 
     def test_nomor_override_dan_nama_file(self):
@@ -124,10 +127,9 @@ class TestLayananDigunakan:
         rows = doc.tables[0].rows[L.BARIS_DATA_MULAI:]
         sub = [L._unique_cells(r)[2].text for r in rows]
         assert sub == ["API Balance Inquiry", "API Virtual Account – Inquiry",
-                       "API Virtual Account – Payment", "API Virtual Account – Inquiry Status",
-                       "API Transaction Status Inquiry"]
+                       "API Virtual Account – Payment", "API Virtual Account – Inquiry Status"]
         nomor = [L._unique_cells(r)[0].text for r in rows]
-        assert nomor == ["1", "2", "2", "2", "2"]   # VA jadi No. 2 (sel gabungan)
+        assert nomor == ["1", "2", "2", "2"]   # VA jadi No. 2 (sel gabungan)
         assert "RTGS" not in doc.element.xml
 
     def test_tanda_tetap_di_baris_yang_benar_setelah_disaring(self):
@@ -159,3 +161,37 @@ class TestFallbackLayanan:
         assert res["layanan"] == L.daftar_layanan()
         b = Document(io.BytesIO(res["b_bytes"]))
         assert len(b.tables[0].rows) == len(Document(str(L.TEMPLATE_5B)).tables[0].rows)
+
+
+
+class TestTransactionStatusInquiry:
+    def test_tsi_baris_sendiri_di_akhir(self):
+        rows = L.daftar_sub_api()
+        assert rows[-1]["layanan_api"] == L.LAYANAN_TSI
+        assert rows[-1]["sub_api"] == L.SUB_API_TSI
+        va = [r["sub_api"] for r in rows if r["layanan_api"] == "API Virtual Account"]
+        assert L.SUB_API_TSI not in va      # tidak dobel di grup VA
+
+    def test_tsi_digunakan_bila_modul_diuji(self):
+        uat = {
+            "Intrabank Transfer": [
+                {"hasil_aktual": "Berhasil", "nama_modul": "Intrabank Trigger Transfer"},
+                {"hasil_aktual": "Berhasil", "nama_modul": "Transaction Status Inquiry"},
+            ],
+            "Transfer VA": [{"hasil_aktual": "Tidak dites", "nama_modul": "Transaction Status Inquiry"}],
+        }
+        assert L.layanan_digunakan(uat) == ["API Intrabank Transfer", L.LAYANAN_TSI]
+
+    def test_tsi_tidak_tampil_bila_semua_tidak_dites(self):
+        uat = {"Intrabank Transfer": [
+            {"hasil_aktual": "Berhasil", "nama_modul": "Intrabank Trigger Transfer"},
+            {"hasil_aktual": "Tidak dites", "nama_modul": "Transaction Status Inquiry"}]}
+        assert L.LAYANAN_TSI not in L.layanan_digunakan(uat)
+
+    def test_nomor_tsi_mengikuti_urutan(self):
+        doc = L.build_lampiran_5b("SM-1", "u@x",
+                                  layanan_tampil=["API Balance Inquiry", "API Intrabank Transfer", L.LAYANAN_TSI])
+        rows = doc.tables[0].rows[L.BARIS_DATA_MULAI:]
+        akhir = [c.text for c in L._unique_cells(rows[-1])]
+        assert akhir[:3] == ["3", L.LAYANAN_TSI, L.SUB_API_TSI]
+        assert akhir[L.KOL_USER] == "u@x"
