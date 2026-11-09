@@ -151,3 +151,11 @@ class TestLayananDigunakan:
             vm = tr.tc_lst[0].tcPr.find(qn("w:vMerge"))
             vals.append(None if vm is None else (vm.get(qn("w:val")) or "continue"))
         assert vals == ["restart", "continue"]   # grup diawali 'restart'
+
+
+class TestFallbackLayanan:
+    def test_tanpa_layanan_terdeteksi_tabel_tidak_kosong(self):
+        res = L.convert_lampiran_5_bytes(_uat_bytes(), "FT_VA", PEN, "u@x")
+        assert res["layanan"] == L.daftar_layanan()
+        b = Document(io.BytesIO(res["b_bytes"]))
+        assert len(b.tables[0].rows) == len(Document(str(L.TEMPLATE_5B)).tables[0].rows)

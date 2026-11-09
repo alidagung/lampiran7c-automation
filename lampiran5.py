@@ -364,6 +364,10 @@ def convert_lampiran_5_bytes(source, product_key, penandatangan, user_devsite,
             if hasattr(uat_src, "seek"):
                 uat_src.seek(0)
         layanan_tampil = layanan_digunakan(main.read_uat_script(uat_src))
+    if not layanan_tampil:
+        # Tidak ada layanan terdeteksi (mis. nama section tidak dikenali):
+        # jangan kosongkan tabel, tampilkan semua Layanan API template.
+        layanan_tampil = daftar_layanan()
 
     doc_a = build_lampiran_5a(nomor, tanggal, penandatangan)
     doc_b = build_lampiran_5b(nomor, user_devsite, tanda, layanan_tampil)
