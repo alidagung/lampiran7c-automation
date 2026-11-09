@@ -43,9 +43,37 @@ class TestNotifikasiJson:
         w = detect_anomalies(_row(remarks))
         assert any("Response Body bukan JSON valid" in x and "baris" in x and "kolom" in x for x in w)
 
-    def test_json_menempel_setelah_request_body_dilaporkan(self):
+    def test_label_response_tanpa_titik_dua_dikenali(self):
+        # "Response Body{" (tanpa ':') harus dikenali sbg label -> tidak ada
+        # peringatan JSON menempel, dan Response terpisah dari Request Body.
         remarks = ('URL:\nhttps://x\n\nHeaders:\nA=b\n\nRequest Body:\n{"a":1}\n\n'
                    'Response Body{\n  "responseCode": "400"\n}')
         w = detect_anomalies(_row(remarks))
+        assert not any("bukan JSON valid" in x for x in w)
+        assert not any("Response Body kosong" in x or "Response tidak ditemukan" in x for x in w)
+
+    def test_dua_blok_json_tanpa_label_tetap_dilaporkan(self):
+        remarks = ('URL:\nhttps://x\n\nHeaders:\nA=b\n\nRequest Body:\n{"a":1}\n\n'
+                   '{"responseCode": "400"}')
+        w = detect_anomalies(_row(remarks))
         assert any("teks/blok tambahan setelah JSON pertama" in x for x in w)
-        assert any("Response Body{" in x for x in w)
+
+
+class TestLabelResponseTanpaTitikDua:
+    def test_response_masuk_kolom_response(self):
+        from main import split_request_response, split_request_response_qris
+        va = ('URL:\nhttps://x\n\nHeaders:\nA=b\n\nRequest Body:\n{"a":1}\n\n'
+              'Response Body{\n  "responseCode": "4002402"\n}')
+        req, resp = split_request_response(va)
+        assert "4002402" in resp and "4002402" not in req
+        qr = ('URL: https://x/notify\nContent-Type: application/json\n\n{"a":1}\n\n'
+              'Response {\n "responseCode": "2005200"\n}')
+        req2, resp2 = split_request_response_qris(qr)
+        assert "2005200" in resp2 and "2005200" not in req2
+
+    def test_value_json_tidak_berubah(self):
+        from main import split_request_response
+        va = ('URL:\nhttps://x\n\nHeaders:\nA=b\n\nRequest Body:\n{"a":1}\n\n'
+              'Response Body\n{"responseMessage": "Response Body{ tetap"}')
+        _, resp = split_request_response(va)
+        assert 'Response Body{ tetap' in resp

@@ -470,7 +470,25 @@ def _normalize_inline_markers(text):
     sebelumnya, contoh: '...}Response body: {...}' -> '...}\nResponse body: {...}'.
     Ini membuat parser per-baris dapat mengenalinya sebagai label.
     """
-    return _INLINE_MARKER_REGEX.sub("\n", text)
+    text = _INLINE_MARKER_REGEX.sub("\n", text)
+    return _fix_response_label(text)
+
+
+# Label "Response"/"Response Body" yang ditulis TANPA titik dua, mis.
+#   "Response Body{"  /  "Response {"  /  "Response Body" (JSON di baris berikutnya)
+_RESP_LABEL_INLINE_RE = re.compile(r"(?im)^([ \t]*response(?:[ \t]+body)?)[ \t]*(?=[{\[])")
+_RESP_LABEL_NEXTLINE_RE = re.compile(r"(?im)^([ \t]*response(?:[ \t]+body)?)[ \t]*\n(?=[ \t]*[{\[])")
+
+
+def _fix_response_label(text):
+    """
+    Kenali label Response yang ditulis tanpa titik dua (mis. 'Response Body{')
+    dengan MENAMBAHKAN titik dua pada label saja, agar JSON setelahnya masuk
+    ke kolom Response. Isi/value data TIDAK diubah.
+    """
+    text = _RESP_LABEL_INLINE_RE.sub(lambda m: m.group(1) + ":\n", text)
+    text = _RESP_LABEL_NEXTLINE_RE.sub(lambda m: m.group(1) + ":\n", text)
+    return text
 
 
 def _classify_label(line):
@@ -953,7 +971,7 @@ def split_request_response_qris(remarks_text):
     if not remarks_text or remarks_text.strip().lower() == "none":
         return "", ""
 
-    text = remarks_text.replace("\r\n", "\n").replace("\r", "\n")
+    text = _fix_response_label(remarks_text.replace("\r\n", "\n").replace("\r", "\n"))
 
     # DETEKSI FORMAT:
     # Sebagian mitra QRIS memakai format BERLABEL (mis. "Request headers:" /
@@ -1187,7 +1205,7 @@ def detect_anomalies(row_data, display_no=None, request_mode="default"):
         warnings.append(f"Kasus {kasus}: hasil 'Berhasil' tetapi kolom Remarks kosong.")
         return warnings
 
-    text = remarks.replace("\r\n", "\n").replace("\r", "\n")
+    text = _fix_response_label(remarks.replace("\r\n", "\n").replace("\r", "\n"))
 
     # Bila QRIS tapi formatnya BERLABEL (Request headers:/Request body:),
     # perlakukan seperti format default (parser VA) agar deteksi akurat.
@@ -1880,7 +1898,7 @@ def _build_uat_result_case_text(remarks_text, request_mode="default"):
     lines_out = []
 
     if request_mode == "qris":
-        text = (remarks_text or "").replace("\r\n", "\n").replace("\r", "\n")
+        text = _fix_response_label((remarks_text or "").replace("\r\n", "\n").replace("\r", "\n"))
         # Bila format BERLABEL (Request headers:/Request body:) -> pakai jalur
         # parser VA (mendukung header JSON object), lalu susun dgn compress.
         if re.search(r"(?im)^\s*request\s+header", text) or re.search(r"(?im)^\s*request\s+body", text):
