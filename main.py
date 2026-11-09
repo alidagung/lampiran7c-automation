@@ -608,12 +608,23 @@ def _format_headers(headers_raw):
             pairs.append(str(item))
     else:
         # Bentuk A: parsing per baris polos
+        # PRINSIP: VALUE TIDAK BOLEH DIUBAH. Hanya sintaks pembungkus yang
+        # dibuang (kutip pembungkus item, koma pemisah antar item); isi value
+        # (termasuk koma/kutip/huruf besar-kecil/tanda '=' di dalamnya) tetap.
         for line in raw.split("\n"):
-            s = line.strip().rstrip(",")
+            s = line.strip()
             if not s or s in ("[", "]", "{", "}"):
                 continue
-            # Buang kutip pembungkus di sekeliling item bila ada
-            # (mis. baris '"Content-Type=application/json"').
+            # Koma pemisah antar item dibuang HANYA bila item terbungkus kutip
+            # ("...",). Koma pada baris tanpa kutip dianggap bagian value.
+            if s.endswith('",'):
+                s = s[:-1]
+            # Anggota JSON satu baris: "Key": "Value"
+            m_member = re.match(r'^"([^"]*)"\s*:\s*"(.*)"$', s)
+            if m_member:
+                pairs.append(f"{m_member.group(1)}={m_member.group(2)}")
+                continue
+            # Item terbungkus kutip: "Key=Value" -> buang HANYA sepasang kutip luar.
             if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
                 s = s[1:-1]
             if "=" in s and ":" not in s.split("=", 1)[0]:
@@ -621,7 +632,7 @@ def _format_headers(headers_raw):
                 pairs.append(s)
             elif ":" in s:
                 key, val = s.split(":", 1)
-                pairs.append(f'{key.strip().strip(chr(34))}={val.strip().strip(chr(34))}')
+                pairs.append(f"{key.strip()}={val.strip()}")
             else:
                 pairs.append(s)
 
