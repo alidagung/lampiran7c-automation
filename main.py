@@ -491,6 +491,35 @@ def _fix_response_label(text):
     return text
 
 
+# Label yang ditulis TANPA titik dua, satu baris penuh (case-insensitive).
+_STANDALONE_LABELS = {
+    "request url": "url", "url": "url", "url endpoint": "url", "endpoint": "url",
+    "request method": "method", "method": "method",
+    "request headers": "headers", "request header": "headers",
+    "header request": "headers", "headers": "headers", "header": "headers",
+    "request body": "request_body", "body": "request_body", "payload": "request_body",
+    "response body": "response", "response": "response",
+}
+
+# Header berbentuk TABEL (mis. salinan dari DevTools browser):
+#   Name        Value
+#   content-type        application/json
+#   Cookie        Path=/
+_HEADER_TABLE_TITLE_RE = re.compile(r"(?i)^name\s+value$")
+_HEADER_TABLE_ROW_RE = re.compile(r'^([^\s=:"\[\]{}]+)(?:\t+|[ \t]{2,})(\S.*)$')
+
+
+def _header_table_row(s):
+    """
+    Jika baris s berbentuk 'Key<tab/2+ spasi>Value', kembalikan (key, value)
+    dengan value APA ADANYA. Selain itu kembalikan None.
+    """
+    m_row = _HEADER_TABLE_ROW_RE.match(s)
+    if m_row:
+        return m_row.group(1), m_row.group(2)
+    return None
+
+
 def _classify_label(line):
     """
     Klasifikasikan sebuah baris label penanda ke salah satu blok:
@@ -512,6 +541,13 @@ def _classify_label(line):
     Jika bukan label, kembalikan (None, None).
     """
     if ":" not in line:
+        # Label TANPA titik dua yang berdiri sendiri satu baris, mis.
+        # "Request Headers", "Request Body", "Response Body" (format sebagian
+        # mitra). Hanya frasa label yang dikenal agar baris data tidak salah
+        # dikira label.
+        key = line.strip().lower()
+        if key in _STANDALONE_LABELS:
+            return (_STANDALONE_LABELS[key], "")
         return (None, None)
 
     before, after = line.split(":", 1)
@@ -525,6 +561,9 @@ def _classify_label(line):
 
     if "response" in key:
         return ("response", after.strip())
+    if "method" in key:
+        # "Request Method: POST" -> blok tersendiri (bukan Request Body)
+        return ("method", after.strip())
     if "url" in key or "endpoint" in key:
         return ("url", after.strip())
     if "header" in key:
@@ -632,6 +671,13 @@ def _format_headers(headers_raw):
         for line in raw.split("\n"):
             s = line.strip()
             if not s or s in ("[", "]", "{", "}"):
+                continue
+            # Format tabel: lewati judul "Name  Value", ubah baris jadi Key=Value
+            if _HEADER_TABLE_TITLE_RE.match(s):
+                continue
+            row = _header_table_row(s)
+            if row:
+                pairs.append(f"{row[0]}={row[1]}")
                 continue
             # Koma pemisah antar item dibuang HANYA bila item terbungkus kutip
             # ("...",). Koma pada baris tanpa kutip dianggap bagian value.
@@ -1314,6 +1360,12 @@ def _iter_header_items(headers_raw):
             s = line.strip().rstrip(",")
             if not s or s in ("[", "]", "{", "}"):
                 continue
+            if _HEADER_TABLE_TITLE_RE.match(s):
+                continue
+            row = _header_table_row(s)
+            if row:
+                items.append(f"{row[0]}={row[1]}")
+                continue
             if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
                 s = s[1:-1]
             items.append(s)
@@ -1877,6 +1929,12 @@ def _compress_headers_inline(headers_raw):
     for line in headers_raw.split("\n"):
         s = line.strip().rstrip(",")
         if not s or s in ("[", "]", "{", "}"):
+            continue
+        if _HEADER_TABLE_TITLE_RE.match(s):
+            continue
+        row = _header_table_row(s)
+        if row:
+            items.append(f"{row[0]}={row[1]}")
             continue
         items.append(s)
     return "[" + ", ".join(items) + "]"
