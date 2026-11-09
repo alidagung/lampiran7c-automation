@@ -21,6 +21,32 @@ from main import (
     PRODUCT_PROFILES,
     OUTPUT_FILENAME,
 )
+import io
+import json
+import zipfile
+from datetime import date
+from pathlib import Path
+
+import lampiran5
+
+# Pengaturan Lampiran 5A/5B disimpan lokal (tidak ikut ke GitHub) agar tidak
+# perlu diketik ulang setiap kali.
+PENGATURAN_FILE = Path(__file__).resolve().parent / "pengaturan_lampiran5.json"
+
+
+def muat_pengaturan_5():
+    data = {**lampiran5.default_penandatangan(),
+            "user_devsite": lampiran5.default_user_devsite()}
+    try:
+        if PENGATURAN_FILE.exists():
+            data.update(json.loads(PENGATURAN_FILE.read_text(encoding="utf-8")))
+    except Exception:  # noqa: BLE001 - file rusak -> pakai default
+        pass
+    return data
+
+
+def simpan_pengaturan_5(data):
+    PENGATURAN_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 # Label produk untuk dropdown (tampilan -> kunci di PRODUCT_PROFILES / "AUTO")
 PRODUCT_OPTIONS = {
@@ -156,7 +182,7 @@ with st.sidebar:
         "1. Pilih **jenis produk**\n"
         "2. **Unggah** file UAT Script (.xlsx)\n"
         "3. Klik **Proses**\n"
-        "4. **Unduh** 2 dokumen hasil"
+        "4. **Unduh** dokumen hasil"
     )
     st.divider()
 
@@ -235,7 +261,48 @@ with col_b:
     if uploaded_file is not None:
         st.success(f"✅ **{uploaded_file.name}**  \n{uploaded_file.size / 1024:.1f} KB")
 
-st.info("📄 Sekali proses menghasilkan **2 dokumen**: **Lampiran 7C** dan **UAT Result**.")
+st.info("📄 Sekali proses menghasilkan **Lampiran 7C** dan **UAT Result**, "
+        "ditambah **Lampiran 5A & 5B** untuk produk VA/FT.")
+
+# --- Pengaturan Lampiran 5A & 5B ---
+_p5 = muat_pengaturan_5()
+with st.expander("⚙️ Pengaturan Lampiran 5A & 5B (produk VA/FT)", expanded=False):
+    st.caption(
+        f"Nomor surat diambil otomatis dari **Nomor Referensi** di UAT Script. "
+        f"Tanggal pengujian = tanggal hari ini (**{lampiran5.format_tanggal_pengujian(date.today())}**)."
+    )
+    nomor_override = st.text_input(
+        "Nomor surat (kosongkan = otomatis dari UAT Script)", value="",
+        placeholder="mis. SM-26-06-003-BSS-IS",
+    )
+    k1, k2 = st.columns(2)
+    with k1:
+        jabatan_1 = st.text_input("Jabatan penandatangan 1", value=_p5["jabatan_1"])
+        nama_1 = st.text_input("Nama penandatangan 1", value=_p5["nama_1"])
+    with k2:
+        jabatan_2 = st.text_input("Jabatan penandatangan 2", value=_p5["jabatan_2"])
+        nama_2 = st.text_input("Nama penandatangan 2", value=_p5["nama_2"])
+    user_devsite = st.text_input("User pada DevSite (Lampiran 5B)", value=_p5["user_devsite"])
+
+    st.markdown("**Matriks Lampiran 5B** — centang = Ѵ (sudah sesuai), tidak dicentang = X")
+    _rows5 = lampiran5.daftar_sub_api()
+    matriks = st.data_editor(
+        [{"Layanan API": r["layanan_api"], "Sub API": r["sub_api"],
+          "Positif Request": True, "Positif Response": True,
+          "Negatif Request": True, "Negatif Response": True} for r in _rows5],
+        disabled=["Layanan API", "Sub API"],
+        hide_index=True, use_container_width=True, key="matriks_5b",
+    )
+    if st.button("💾 Simpan penandatangan & user sebagai default"):
+        simpan_pengaturan_5({"jabatan_1": jabatan_1, "nama_1": nama_1,
+                             "jabatan_2": jabatan_2, "nama_2": nama_2,
+                             "user_devsite": user_devsite})
+        st.success("Tersimpan. Isian ini dipakai otomatis berikutnya.")
+
+penandatangan_5 = {"jabatan_1": jabatan_1, "nama_1": nama_1,
+                   "jabatan_2": jabatan_2, "nama_2": nama_2}
+tanda_5b = [[bool(r["Positif Request"]), bool(r["Positif Response"]),
+             bool(r["Negatif Request"]), bool(r["Negatif Response"])] for r in matriks]
 
 
 # ============================================================
@@ -249,7 +316,7 @@ st.markdown(
 )
 
 process_clicked = st.button(
-    "🚀 Proses & Buat Lampiran 7C + UAT Result",
+    "🚀 Proses & Buat Dokumen",
     type="primary",
     disabled=(uploaded_file is None),
     use_container_width=True,
@@ -267,6 +334,7 @@ if "lampiran_bytes" not in st.session_state:
     st.session_state.result_warnings = None
     st.session_state.result_product = None
     st.session_state.result_status = None
+    st.session_state.lamp5 = None
 
 if process_clicked and uploaded_file is not None:
     try:
@@ -283,8 +351,14 @@ if process_clicked and uploaded_file is not None:
         result_bytes, _pk2, result_name = convert_uat_to_result_bytes(
             file_bytes, product=selected_product
         )
+        progress.progress(85, text="Membuat Lampiran 5A & 5B...")
+        lamp5 = lampiran5.convert_lampiran_5_bytes(
+            file_bytes, product_key, penandatangan_5, user_devsite,
+            tanda=tanda_5b, nomor_surat=nomor_override,
+        )
         progress.progress(100, text="Selesai!")
         progress.empty()
+        st.session_state.lamp5 = lamp5
 
         st.session_state.lampiran_bytes = lampiran_bytes
         st.session_state.lampiran_name = lampiran_name
@@ -311,7 +385,7 @@ if process_clicked and uploaded_file is not None:
             )
     except Exception as e:  # noqa: BLE001
         for k in ("lampiran_bytes", "result_docx_bytes", "result_stats",
-                  "result_warnings", "result_product", "result_status"):
+                  "result_warnings", "result_product", "result_status", "lamp5"):
             st.session_state[k] = None
         st.error(
             "Gagal memproses file. Pastikan file yang diunggah adalah "
@@ -372,7 +446,7 @@ if st.session_state.lampiran_bytes is not None:
         res_name = (st.session_state.get("result_docx_name") or "UAT Result.docx").replace(
             ".docx", f" {timestamp}.docx"
         )
-        st.write("Kedua dokumen berhasil dibuat. Silakan unduh:")
+        st.write("Dokumen berhasil dibuat. Silakan unduh:")
         dl1, dl2 = st.columns(2)
         with dl1:
             st.download_button(
@@ -390,6 +464,40 @@ if st.session_state.lampiran_bytes is not None:
                 type="secondary", use_container_width=True,
             )
             st.caption("Dokumen naratif per-case + Daftar Isi.")
+
+        lamp5 = st.session_state.get("lamp5")
+        semua = [(lamp_name, st.session_state.lampiran_bytes),
+                 (res_name, st.session_state.result_docx_bytes)]
+        st.divider()
+        if lamp5:
+            if not lamp5["nomor_surat"]:
+                st.warning("⚠️ **Nomor Referensi tidak ditemukan** di UAT Script. "
+                           "Isi nomor surat manual di *Pengaturan Lampiran 5A & 5B*, lalu proses ulang.")
+            st.write(f"**Lampiran 5A & 5B** — No. `{lamp5['nomor_surat'] or '-'}` · "
+                     f"{lampiran5.format_tanggal_pengujian(lamp5['tanggal'])}")
+            a_name = lamp5["a_name"].replace(".docx", f" {timestamp}.docx")
+            b_name = lamp5["b_name"].replace(".docx", f" {timestamp}.docx")
+            dl3, dl4 = st.columns(2)
+            with dl3:
+                st.download_button("⬇️ Lampiran 5A (.docx)", data=lamp5["a_bytes"],
+                                   file_name=a_name, mime=mime_docx, use_container_width=True)
+                st.caption("Informasi hasil uji Developer Site.")
+            with dl4:
+                st.download_button("⬇️ Lampiran 5B (.docx)", data=lamp5["b_bytes"],
+                                   file_name=b_name, mime=mime_docx, use_container_width=True)
+                st.caption("Matriks asesmen uji Developer Site.")
+            semua += [(a_name, lamp5["a_bytes"]), (b_name, lamp5["b_bytes"])]
+        else:
+            st.caption("ℹ️ Lampiran 5A & 5B saat ini hanya untuk produk **VA/FT** "
+                       "(daftar Sub API QRIS belum tersedia).")
+
+        zbuf = io.BytesIO()
+        with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for nm, data in semua:
+                zf.writestr(nm, data)
+        st.download_button(f"📦 Unduh semua ({len(semua)} dokumen, .zip)", data=zbuf.getvalue(),
+                           file_name=f"Dokumen ASPI {timestamp}.zip", mime="application/zip",
+                           use_container_width=True)
 
     with tab_grafik:
         # Chart batang per section: PASS / NOT PASS / N/A
@@ -468,7 +576,11 @@ st.divider()
 with st.expander("ℹ️ Tentang aplikasi ini"):
     st.markdown(
         """
-        Aplikasi ini membaca file **UAT Script** lalu menghasilkan **2 dokumen**:
+        Aplikasi ini membaca file **UAT Script** lalu menghasilkan dokumen berikut:
+
+        **Lampiran 5A & 5B** (produk VA/FT; dibuat dari template resmi):
+        - Nomor surat dari **Nomor Referensi** UAT Script, tanggal = hari diproses.
+        - Penandatangan, User DevSite, dan isian Ѵ/X diatur di *Pengaturan Lampiran 5A & 5B*.
 
         **Lampiran 7C** (tabel skenario hasil uji fungsional):
         - Hanya layanan yang **benar-benar dites** yang ditampilkan.

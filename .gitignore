@@ -28,3 +28,6 @@ input/*.xls
 # OS
 .DS_Store
 Thumbs.db
+
+# Pengaturan lokal Lampiran 5A/5B (per komputer)
+pengaturan_lampiran5.json
