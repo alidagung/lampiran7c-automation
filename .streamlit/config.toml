@@ -1,0 +1,11 @@
+# Tema aplikasi Automation Dokumen ASPI (dibaca otomatis oleh `streamlit run app.py`)
+[theme]
+base = "light"
+primaryColor = "#ED7D31"
+backgroundColor = "#F5F6FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1F2937"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false

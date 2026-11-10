@@ -48,6 +48,8 @@ PRODUCT_LABEL = {"FT_VA": "VA / Fund Transfer", "QRIS": "QRIS"}
 
 BRAND = "#ED7D31"
 BRAND_DARK = "#C55A11"
+NAVY = "#1E2A47"
+NAVY_2 = "#2B3A5E"
 MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 STATUS_LABEL = {
@@ -115,73 +117,159 @@ st.set_page_config(
 st.markdown(
     f"""
     <style>
-    .block-container {{ padding-top: 1.4rem; max-width: 1200px; }}
+    /* ---------- Dasar ---------- */
+    .stApp {{
+        background:
+            radial-gradient(1200px 380px at 85% -120px, rgba(237,125,49,0.16), transparent 70%),
+            radial-gradient(900px 300px at -10% -80px, rgba(43,58,94,0.10), transparent 70%),
+            #F5F6FA;
+    }}
+    .block-container {{ padding-top: 1.2rem; max-width: 1200px; }}
 
+    /* ---------- Sidebar gelap ---------- */
+    section[data-testid="stSidebar"] > div:first-child {{
+        background: linear-gradient(180deg, {NAVY} 0%, {NAVY_2} 100%);
+    }}
+    section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+    section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
+    section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3,
+    section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h4,
+    section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+    section[data-testid="stSidebar"] [data-testid="stExpander"] summary p {{
+        color: #EEF1F7 !important;
+    }}
+    section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+    section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {{ color: #AEB8CC !important; }}
+    section[data-testid="stSidebar"] hr {{ border-color: rgba(255,255,255,0.14); }}
+    section[data-testid="stSidebar"] [data-testid="stExpander"] {{
+        background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px;
+    }}
+    .sb-brand {{ display:flex; align-items:center; gap:10px; margin: 2px 0 2px 0; }}
+    .sb-logo {{
+        width: 38px; height: 38px; border-radius: 11px; display:flex; align-items:center; justify-content:center;
+        background: linear-gradient(135deg, {BRAND}, {BRAND_DARK}); font-size: 20px;
+        box-shadow: 0 6px 14px rgba(237,125,49,0.35);
+    }}
+    .sb-title {{ color:#fff; font-weight: 800; font-size: 1.02rem; line-height: 1.15; }}
+    .sb-sub {{ color:#AEB8CC; font-size: 0.78rem; }}
+    .sb-section {{
+        color: {BRAND} !important; font-weight: 800; font-size: 0.78rem; letter-spacing: .8px;
+        text-transform: uppercase; margin: 6px 0 4px 0;
+    }}
+    .sb-box {{
+        background: rgba(237,125,49,0.10); border: 1px solid rgba(237,125,49,0.35);
+        border-radius: 12px; padding: 8px 12px; margin-bottom: 6px;
+    }}
+    .sb-box .k {{ color:#AEB8CC; font-size: 0.72rem; text-transform: uppercase; letter-spacing:.4px; font-weight:700; }}
+    .sb-box .v {{ color:#fff; font-weight: 700; font-size: 0.92rem; word-break: break-word; }}
+
+    /* ---------- Hero ---------- */
     .hero {{
-        background: linear-gradient(120deg, {BRAND} 0%, {BRAND_DARK} 100%);
-        padding: 22px 30px; border-radius: 18px; color: #fff;
-        box-shadow: 0 10px 26px rgba(237,125,49,0.28);
-        display: flex; align-items: center; gap: 18px; margin-bottom: 14px;
+        position: relative; overflow: hidden;
+        background: linear-gradient(115deg, {NAVY} 0%, {NAVY_2} 45%, {BRAND_DARK} 100%);
+        padding: 26px 32px; border-radius: 20px; color: #fff; margin-bottom: 14px;
+        box-shadow: 0 14px 34px rgba(30,42,71,0.28);
+        display: flex; align-items: center; gap: 18px;
+    }}
+    .hero::after {{
+        content:""; position:absolute; right:-60px; top:-60px; width:240px; height:240px; border-radius:50%;
+        background: radial-gradient(circle, rgba(237,125,49,0.55), rgba(237,125,49,0) 70%);
     }}
     .hero-logo {{
-        width: 54px; height: 54px; border-radius: 14px; flex-shrink: 0;
-        background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35);
-        display:flex; align-items:center; justify-content:center; font-size: 28px;
+        width: 58px; height: 58px; border-radius: 16px; flex-shrink: 0; z-index: 1;
+        background: linear-gradient(135deg, {BRAND}, {BRAND_DARK});
+        display:flex; align-items:center; justify-content:center; font-size: 30px;
+        box-shadow: 0 8px 20px rgba(237,125,49,0.45);
     }}
-    .hero h1 {{ color:#fff; font-size: 1.6rem; margin: 0 0 2px 0; font-weight: 800; letter-spacing:-0.3px; }}
-    .hero p  {{ color:#fff8f2; font-size: 0.95rem; margin: 0; }}
+    .hero-teks {{ z-index: 1; }}
+    .hero h1 {{ color:#fff; font-size: 1.65rem; margin: 0 0 3px 0; font-weight: 800; letter-spacing:-0.4px; }}
+    .hero p  {{ color:#D7DEEA; font-size: 0.95rem; margin: 0; }}
+    .hero-tag {{
+        display:inline-block; margin: 8px 6px 0 0; padding: 3px 11px; border-radius: 999px;
+        background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.22);
+        font-size: 0.76rem; font-weight: 700; color: #fff;
+    }}
 
-    /* Stepper */
-    .stepper {{ display:flex; gap: 10px; margin: 2px 0 16px 0; flex-wrap: wrap; }}
+    /* ---------- Kartu langkah (st.container(border=True)) ---------- */
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        background: #FFFFFF; border-radius: 18px !important;
+        border: 1px solid rgba(30,42,71,0.08) !important;
+        box-shadow: 0 6px 22px rgba(30,42,71,0.06);
+    }}
+
+    /* ---------- Stepper ---------- */
+    .stepper {{ display:flex; gap: 10px; margin: 0 0 14px 0; flex-wrap: wrap; }}
     .step {{
         flex: 1; min-width: 180px; display:flex; align-items:center; gap:10px;
-        padding: 10px 14px; border-radius: 12px; font-weight: 600; font-size: 0.92rem;
-        background: #f4f5f7; color: #6b7280; border: 1px solid rgba(0,0,0,0.05);
+        padding: 11px 14px; border-radius: 14px; font-weight: 700; font-size: 0.9rem;
+        background: #FFFFFF; color: #8A93A6; border: 1px solid rgba(30,42,71,0.08);
+        box-shadow: 0 3px 10px rgba(30,42,71,0.04);
     }}
     .step .num {{
-        width: 26px; height: 26px; border-radius: 50%; display:flex; align-items:center;
-        justify-content:center; font-size: 0.82rem; font-weight: 800;
-        background: #d9dce1; color: #fff; flex-shrink: 0;
+        width: 28px; height: 28px; border-radius: 50%; display:flex; align-items:center;
+        justify-content:center; font-size: 0.84rem; font-weight: 800;
+        background: #E3E7EF; color: #8A93A6; flex-shrink: 0;
     }}
-    .step.done {{ background: #eaf7ee; color: #1e7e38; }}
-    .step.done .num {{ background: #2e9e4f; }}
-    .step.active {{ background: #fff3ea; color: {BRAND_DARK}; border-color: rgba(237,125,49,0.35); }}
-    .step.active .num {{ background: {BRAND}; }}
+    .step.done {{ color: #1E7E38; border-color: rgba(46,158,79,0.30); }}
+    .step.done .num {{ background: #2E9E4F; color:#fff; }}
+    .step.active {{ color: {BRAND_DARK}; border-color: rgba(237,125,49,0.45);
+                    box-shadow: 0 6px 16px rgba(237,125,49,0.18); }}
+    .step.active .num {{ background: linear-gradient(135deg, {BRAND}, {BRAND_DARK}); color:#fff; }}
 
-    .judul-langkah {{ font-size: 1.12rem; font-weight: 800; margin: 0 0 2px 0; }}
-    .sub-langkah {{ color: #6b7280; font-size: 0.88rem; margin-bottom: 10px; }}
+    .judul-langkah {{ display:flex; align-items:center; gap:10px; font-size: 1.12rem; font-weight: 800;
+                      color: {NAVY}; margin: 0 0 2px 0; }}
+    .judul-langkah .no {{
+        width: 28px; height: 28px; border-radius: 9px; display:flex; align-items:center; justify-content:center;
+        background: linear-gradient(135deg, {BRAND}, {BRAND_DARK}); color:#fff; font-size: 0.86rem;
+    }}
+    .sub-langkah {{ color: #6B7280; font-size: 0.88rem; margin: 0 0 12px 38px; }}
 
-    /* Chip info mitra */
-    .chips {{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-top: 6px; }}
-    .chip {{ background:#faf8f6; border:1px solid rgba(0,0,0,0.06); border-radius: 12px; padding: 10px 14px; }}
-    .chip .k {{ font-size: 0.74rem; color:#6b7280; font-weight:700; text-transform: uppercase; letter-spacing: .3px; }}
-    .chip .v {{ font-size: 0.98rem; font-weight: 700; color:#1f2937; word-break: break-word; }}
-    .chip .v.kosong {{ color:#c62828; }}
+    /* ---------- Chip info mitra ---------- */
+    .chips {{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-top: 8px; }}
+    .chip {{ background: linear-gradient(180deg,#FFF8F2,#FFFFFF); border:1px solid rgba(237,125,49,0.22);
+             border-radius: 14px; padding: 10px 14px; }}
+    .chip .k {{ font-size: 0.72rem; color:#8A93A6; font-weight:800; text-transform: uppercase; letter-spacing: .4px; }}
+    .chip .v {{ font-size: 0.98rem; font-weight: 800; color:{NAVY}; word-break: break-word; }}
+    .chip .v.kosong {{ color:#C62828; }}
 
-    /* Ringkasan validasi */
-    .pill {{ display:inline-block; padding: 4px 12px; border-radius: 999px; font-size: 0.84rem;
-             font-weight: 700; margin: 0 6px 6px 0; }}
-    .pill-ok {{ background:#eaf7ee; color:#1e7e38; }}
-    .pill-no {{ background:#f4f5f7; color:#6b7280; }}
-    .pill-cek {{ background:#fff4e0; color:#b26a00; }}
+    /* ---------- Ringkasan validasi ---------- */
+    .pill {{ display:inline-block; padding: 5px 13px; border-radius: 999px; font-size: 0.84rem;
+             font-weight: 800; margin: 0 6px 8px 0; }}
+    .pill-ok {{ background:#E6F6EB; color:#1E7E38; }}
+    .pill-no {{ background:#EEF0F4; color:#6B7280; }}
+    .pill-cek {{ background:#FFF1DC; color:#B26A00; }}
 
-    /* Kartu statistik */
-    .stat {{ border-radius: 14px; padding: 14px 16px; color:#fff; box-shadow: 0 4px 14px rgba(0,0,0,0.10); }}
-    .stat .lbl {{ font-size: 0.8rem; opacity: 0.92; font-weight:600; }}
-    .stat .val {{ font-size: 1.75rem; font-weight: 800; line-height:1.1; }}
-    .stat-pass {{ background: linear-gradient(135deg,#2e9e4f,#1e7e38); }}
-    .stat-fail {{ background: linear-gradient(135deg,#e24b4b,#c62828); }}
-    .stat-na   {{ background: linear-gradient(135deg,#f0a93b,#d9871f); }}
-    .stat-tot  {{ background: linear-gradient(135deg,#5b6b7a,#3c4753); }}
+    /* ---------- Kartu statistik ---------- */
+    .stat {{ border-radius: 16px; padding: 14px 16px; color:#fff; box-shadow: 0 8px 20px rgba(30,42,71,0.12); }}
+    .stat .lbl {{ font-size: 0.8rem; opacity: 0.92; font-weight:700; }}
+    .stat .val {{ font-size: 1.8rem; font-weight: 800; line-height:1.1; }}
+    .stat-pass {{ background: linear-gradient(135deg,#34B35A,#1E7E38); }}
+    .stat-fail {{ background: linear-gradient(135deg,#EF5A5A,#C62828); }}
+    .stat-na   {{ background: linear-gradient(135deg,#F5B347,#D9871F); }}
+    .stat-tot  {{ background: linear-gradient(135deg,{NAVY_2},{NAVY}); }}
 
-    /* Kartu dokumen */
-    .doc-ikon {{ font-size: 1.5rem; line-height: 1; }}
-    .doc-judul {{ font-weight: 800; font-size: 1.0rem; margin-top: 4px; }}
-    .doc-ket {{ color:#6b7280; font-size: 0.84rem; min-height: 2.4em; }}
+    /* ---------- Kartu dokumen ---------- */
+    .doc-ikon {{
+        width: 40px; height: 40px; border-radius: 12px; display:flex; align-items:center; justify-content:center;
+        background: #FFF3EA; font-size: 1.3rem;
+    }}
+    .doc-judul {{ font-weight: 800; font-size: 1.0rem; margin-top: 8px; color:{NAVY}; }}
+    .doc-ket {{ color:#6B7280; font-size: 0.84rem; min-height: 2.5em; }}
 
-    .stButton>button, .stDownloadButton>button {{ border-radius: 11px; font-weight: 700; }}
+    /* ---------- Tombol ---------- */
+    .stButton>button, .stDownloadButton>button {{
+        border-radius: 12px; font-weight: 800; transition: transform .08s ease, box-shadow .15s ease;
+    }}
+    .stButton>button[kind="primary"], .stDownloadButton>button[kind="primary"] {{
+        background: linear-gradient(135deg, {BRAND}, {BRAND_DARK}); border: 0;
+        box-shadow: 0 8px 18px rgba(237,125,49,0.32);
+    }}
+    .stButton>button:hover, .stDownloadButton>button:hover {{ transform: translateY(-1px); }}
+
+    /* ---------- Unggah ---------- */
     section[data-testid="stFileUploaderDropzone"] {{
-        border: 2px dashed {BRAND}; border-radius: 14px; background: #fff8f2;
+        border: 2px dashed rgba(237,125,49,0.65); border-radius: 16px;
+        background: linear-gradient(180deg,#FFF8F2,#FFFFFF);
     }}
     </style>
     """,
@@ -201,7 +289,7 @@ def chip(k, v, kosong_teks="belum ada"):
 
 
 def judul_langkah(nomor, judul, sub):
-    st.markdown(f'<div class="judul-langkah">{nomor} · {judul}</div>'
+    st.markdown(f'<div class="judul-langkah"><span class="no">{nomor}</span>{judul}</div>'
                 f'<div class="sub-langkah">{sub}</div>', unsafe_allow_html=True)
 
 
@@ -211,11 +299,17 @@ def judul_langkah(nomor, judul, sub):
 
 _peng = muat_pengaturan()
 with st.sidebar:
-    st.markdown("### 📄 Automation Dokumen ASPI")
-    st.caption("UAT Script → Lampiran 7C, UAT Result, 5A/5B, 6A/6B")
+    st.markdown(
+        '<div class="sb-brand"><div class="sb-logo">📄</div><div>'
+        '<div class="sb-title">Automation Dokumen ASPI</div>'
+        '<div class="sb-sub">Bank Sahabat Sampoerna</div></div></div>',
+        unsafe_allow_html=True,
+    )
+    st.divider()
+    sidebar_mitra = st.container()      # diisi setelah UAT Script diunggah
     st.divider()
 
-    st.markdown("#### ⚙️ Pengaturan tetap")
+    st.markdown('<div class="sb-section">⚙️ Pengaturan tetap</div>', unsafe_allow_html=True)
     st.caption("Jarang berubah. Dipakai di Lampiran 5A & 6A (penandatangan) "
                "dan 5B (user DevSite bank).")
     jabatan_1 = st.text_input("Jabatan penandatangan 1", value=_peng["jabatan_1"])
@@ -250,9 +344,12 @@ st.markdown(
     """
     <div class="hero">
         <div class="hero-logo">📄</div>
-        <div>
+        <div class="hero-teks">
             <h1>Automation Dokumen ASPI</h1>
             <p>Unggah UAT Script, cek API yang digunakan, lalu unduh semua lampiran sekaligus.</p>
+            <span class="hero-tag">Lampiran 7C</span><span class="hero-tag">UAT Result</span>
+            <span class="hero-tag">Lampiran 5A · 5B</span><span class="hero-tag">Lampiran 6A · 6B</span>
+            <span class="hero-tag">🔒 100% lokal</span>
         </div>
     </div>
     """,
@@ -308,6 +405,29 @@ with st.container(border=True):
 file_ok = analisa is not None and analisa["ok"]
 lampiran_5_6 = file_ok and produk in lampiran5.PRODUK_DIDUKUNG
 
+# --- Sidebar: data mitra (berbeda tiap mitra) ---
+user_devsite_mitra = ""
+with sidebar_mitra:
+    st.markdown('<div class="sb-section">🧾 Data mitra</div>', unsafe_allow_html=True)
+    if not file_ok:
+        st.caption("Unggah UAT Script untuk mengisi data mitra.")
+    else:
+        st.markdown(
+            '<div class="sb-box"><div class="k">Mitra</div>'
+            f'<div class="v">{analisa["pengguna"] or "-"}</div></div>',
+            unsafe_allow_html=True,
+        )
+        if lampiran_5_6:
+            user_devsite_mitra = st.text_input(
+                "User pada Devsite mitra (Lampiran 6B) *", value="", key=f"user6_{sig}",
+                placeholder="nama@mitra.co.id",
+                help="Email user DevSite milik mitra; berbeda tiap mitra.",
+            )
+            if not user_devsite_mitra.strip():
+                st.caption("⚠️ Wajib diisi agar kolom User pada Devsite di 6B tidak kosong.")
+        else:
+            st.caption("Produk QRIS: Lampiran 6B belum tersedia.")
+
 
 # ============================================================
 # LANGKAH 2 — VALIDASI API & DATA MITRA
@@ -316,7 +436,6 @@ lampiran_5_6 = file_ok and produk in lampiran5.PRODUK_DIDUKUNG
 sub_api_tampil = None
 tanda = None
 pengguna = ""
-user_devsite_mitra = ""
 nomor_surat = ""
 
 with st.container(border=True):
@@ -375,17 +494,15 @@ with st.container(border=True):
             st.warning("Belum ada Sub API yang dicentang — tabel 5B & 6B akan menampilkan **semua** Sub API.")
             sub_api_tampil = None
 
-        st.markdown("**Data mitra**")
-        m1, m2, m3 = st.columns([3, 3, 2])
+        st.markdown("**Data dokumen**")
+        m1, m2 = st.columns([3, 2])
         with m1:
             pengguna = st.text_input("Pengguna Layanan (Lampiran 6B)", value=analisa["pengguna"],
                                      key=f"pengguna_{sig}", help="Otomatis dari judul UAT Script; bisa diedit.")
         with m2:
-            user_devsite_mitra = st.text_input("User Devsite mitra (Lampiran 6B) *", value="",
-                                               key=f"user6_{sig}", placeholder="nama@mitra.co.id")
-        with m3:
             nomor_surat = st.text_input("Nomor surat (5A/5B)", value=analisa["nomor"],
                                         key=f"nomor_{sig}", help="Otomatis dari Nomor Referensi UAT Script.")
+        st.caption("👈 **User Devsite mitra** untuk Lampiran 6B diisi di panel kiri.")
 
 
 # ============================================================
@@ -404,7 +521,8 @@ with st.container(border=True):
             siap.append(("✅" if nomor_surat.strip() else "⚠️",
                          "Nomor surat" + ("" if nomor_surat.strip() else " belum ada")))
             siap.append(("✅" if user_devsite_mitra.strip() else "⚠️",
-                         "User Devsite mitra" + ("" if user_devsite_mitra.strip() else " belum diisi (6B kosong)")))
+                         "User Devsite mitra" + ("" if user_devsite_mitra.strip()
+                                                 else " belum diisi — isi di panel kiri")))
         st.markdown(" &nbsp;·&nbsp; ".join(f"{a} {b}" for a, b in siap), unsafe_allow_html=True)
 
     buat = st.button("🚀 Buat semua dokumen", type="primary", disabled=not file_ok,
@@ -493,7 +611,7 @@ with st.container(border=True):
         if hasil["lamp5"] and not hasil["lamp5"]["nomor_surat"]:
             st.warning("⚠️ Nomor surat kosong di 5A/5B — isi di langkah 2 lalu buat ulang.")
         if hasil["lamp6"] and not user_devsite_mitra.strip():
-            st.warning("⚠️ User Devsite mitra kosong — kolom di Lampiran 6B kosong.")
+            st.warning("⚠️ User Devsite mitra kosong — isi di panel kiri, lalu buat ulang.")
 
         # ---------- Ringkasan hasil Lampiran 7C ----------
         status = hasil["status"] or {}
