@@ -9,18 +9,20 @@ hanya bagian yang berubah yang diganti:
   Lampiran 7B : Pengguna Layanan (nama PT mitra), isian Ѵ / X, dan Sub API
                 yang digunakan (hasil validasi UAT Script)
 
-Catatan: urutan baris di template 7B dipertahankan apa adanya (API Transaction
-Status Inquiry berada SEBELUM API Virtual Account). Karena itu isian Ѵ/X
-dicocokkan berdasarkan NAMA Sub API, bukan nomor baris.
+Catatan: di template 7B, baris API Transaction Status Inquiry berada SEBELUM
+API Virtual Account. Saat dokumen dibuat, baris itu dipindah ke PALING AKHIR
+agar urutannya seragam dengan Lampiran 5B & 6B. Isian Ѵ/X tetap dicocokkan
+berdasarkan NAMA Sub API.
 """
 
 from datetime import date
 
 from docx import Document
+from docx.table import _Cell
 
 from lampiran5 import (
     TEMPLATE_DIR, PRODUK_DIDUKUNG, TANDA_SESUAI, TANDA_BELUM, BARIS_DATA_MULAI,
-    format_tanggal_pengujian, _replace_regex, _set_cell_text, _unique_cells,
+    SUB_API_TSI, format_tanggal_pengujian, _replace_regex, _set_cell_text, _unique_cells,
     _cari_paragraf, _to_bytes, nama_file_aman, _set_landscape, _rapikan_tabel,
     saring_sub_api, pilih_sub_api, resolve_sub_api,
     daftar_sub_api as _daftar_sub_api_5,
@@ -43,9 +45,26 @@ BOBOT_KOLOM_7B = (520, 2900, 3400, 3150, 1100, 1100, 1100, 1100)
 # DATA TEMPLATE
 # ============================================================
 
+def _template_7b():
+    """
+    Muat template 7B lalu pindahkan baris "API Transaction Status Inquiry"
+    (baris tunggal tanpa sel gabungan) ke PALING AKHIR tabel, seragam dengan
+    Lampiran 5B & 6B.
+    """
+    doc = Document(str(TEMPLATE_7B))
+    table = doc.tables[0]
+    trs = list(table._tbl.tr_lst)[BARIS_DATA_MULAI:]
+    tr_tsi = next((tr for tr in trs
+                   if _Cell(tr.tc_lst[2], table).text.strip() == SUB_API_TSI), None)
+    if tr_tsi is not None and tr_tsi is not trs[-1]:
+        tr_tsi.getparent().remove(tr_tsi)
+        table._tbl.append(tr_tsi)
+    return doc
+
+
 def daftar_sub_api():
-    """Baris matriks 7B sesuai urutan template: list dict {layanan_api, sub_api}."""
-    t = Document(str(TEMPLATE_7B)).tables[0]
+    """Baris matriks 7B (TSI paling akhir): list dict {layanan_api, sub_api}."""
+    t = _template_7b().tables[0]
     rows = []
     for row in t.rows[BARIS_DATA_MULAI:]:
         cells = _unique_cells(row)
@@ -105,7 +124,7 @@ def build_lampiran_7b(pengguna_layanan, tanda=None, layanan_tampil=None, sub_api
         layanan_tampil  : Layanan API yang ditampilkan (semua Sub API-nya)
         sub_api_tampil  : Sub API yang ditampilkan; keduanya None = semua
     """
-    doc = Document(str(TEMPLATE_7B))
+    doc = _template_7b()
     t = doc.tables[0]
     per_nama = _tanda_per_nama(tanda)
     for row in t.rows[BARIS_DATA_MULAI:]:

@@ -61,17 +61,32 @@ class TestLampiran7A:
 
 class TestLampiran7B:
     def test_semua_sub_api_isi_sama_template(self):
+        # Isi sel sama dengan template; hanya baris TSI yang pindah ke akhir
         doc = L7.build_lampiran_7b("PT Silot Technology Indonesia")
         tpl = Document(str(L7.TEMPLATE_7B))
-        assert [c.text for r in doc.tables[0].rows for c in r.cells] == \
-               [c.text for r in tpl.tables[0].rows for c in r.cells]
+        def baris(d):   # abaikan kolom No (dinomori ulang mengikuti urutan baru)
+            return sorted(tuple(c.text for c in r.cells)[1:] for r in d.tables[0].rows)
+        assert baris(doc) == baris(tpl)
+
+    def test_tsi_paling_akhir_seperti_5b_6b(self):
+        rows = L7.daftar_sub_api()
+        assert rows[-1]["sub_api"] == L5.SUB_API_TSI
+        assert [r["sub_api"] for r in rows] == [r["sub_api"] for r in L5.daftar_sub_api()]
+        doc = L7.build_lampiran_7b("PT X")
+        data = _data(doc)
+        assert data[-1][2] == L5.SUB_API_TSI and data[-1][0] == "7"
+        assert [d[1] for d in data[-4:-1]] == ["API Virtual Account"] * 3
+        # Grup VA tetap 1 sel gabungan bernomor 6 (restart + continue)
+        trs = doc.tables[0]._tbl.tr_lst[L5.BARIS_DATA_MULAI:][-4:-1]
+        assert [L5._vmerge(tr.tc_lst[0]) for tr in trs] == ["restart", "continue", "continue"]
+        assert data[-4][0] == "6"
 
     def test_set_sub_api_sama_dengan_5b(self):
         assert sorted(r["sub_api"] for r in L7.daftar_sub_api()) == \
                sorted(r["sub_api"] for r in L5.daftar_sub_api())
 
     def test_tanda_dicocokkan_per_nama_bukan_urutan(self):
-        # Urutan 7B: TSI sebelum VA; list tanda mengikuti urutan 5B (TSI terakhir)
+        # list tanda mengikuti urutan 5B; dicocokkan per nama Sub API
         tanda = [[True] * 4 for _ in L5.daftar_sub_api()]
         i_tsi = [i for i, r in enumerate(L5.daftar_sub_api()) if r["sub_api"] == L5.SUB_API_TSI][0]
         tanda[i_tsi] = [False, True, True, False]
@@ -85,7 +100,7 @@ class TestLampiran7B:
                  "API Virtual Account – Payment"}
         data = _data(L7.build_lampiran_7b("PT X", sub_api_tampil=pilih))
         assert [d[2] for d in data] == ["API Balance Inquiry", "API Intrabank Transfer",
-                                        L5.SUB_API_TSI, "API Virtual Account – Payment"]
+                                        "API Virtual Account – Payment", L5.SUB_API_TSI]
         assert [d[0] for d in data] == ["1", "2", "3", "4"]
         assert all(d[L7.KOL_PENGGUNA] == "PT X" for d in data)
 
