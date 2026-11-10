@@ -2,7 +2,7 @@
 Aplikasi Web Automation Dokumen ASPI
 ====================================
 Aplikasi web berbasis Streamlit untuk mengubah file UAT Script (Excel) menjadi
-dokumen ASPI (Word): Lampiran 7C, UAT Result, Lampiran 5A/5B, dan 6A/6B.
+dokumen ASPI (Word): Lampiran 7C, UAT Result, Lampiran 5A/5B, 6A/6B, dan 7A/7B.
 
 Alur (3 langkah):
     1. Unggah UAT Script  -> info mitra (nama PT, nomor referensi) langsung tampil
@@ -34,6 +34,7 @@ from main import (
 )
 import lampiran5
 import lampiran6
+import lampiran7
 
 # ============================================================
 # KONSTANTA & PENGATURAN LOKAL
@@ -310,7 +311,7 @@ with st.sidebar:
     st.divider()
 
     st.markdown('<div class="sb-section">⚙️ Pengaturan tetap</div>', unsafe_allow_html=True)
-    st.caption("Jarang berubah. Dipakai di Lampiran 5A & 6A (penandatangan) "
+    st.caption("Jarang berubah. Dipakai di Lampiran 5A, 6A & 7A (penandatangan) "
                "dan 5B (user DevSite bank).")
     jabatan_1 = st.text_input("Jabatan penandatangan 1", value=_peng["jabatan_1"])
     nama_1 = st.text_input("Nama penandatangan 1", value=_peng["nama_1"])
@@ -348,7 +349,7 @@ st.markdown(
             <h1>Automation Dokumen ASPI</h1>
             <p>Unggah UAT Script, cek API yang digunakan, lalu unduh semua lampiran sekaligus.</p>
             <span class="hero-tag">Lampiran 7C</span><span class="hero-tag">UAT Result</span>
-            <span class="hero-tag">Lampiran 5A · 5B</span><span class="hero-tag">Lampiran 6A · 6B</span>
+            <span class="hero-tag">Lampiran 5A · 5B</span><span class="hero-tag">Lampiran 6A · 6B</span><span class="hero-tag">Lampiran 7A · 7B</span>
             <span class="hero-tag">🔒 100% lokal</span>
         </div>
     </div>
@@ -440,11 +441,11 @@ nomor_surat = ""
 
 with st.container(border=True):
     judul_langkah(2, "Validasi API & data mitra",
-                  "Sub API yang digunakan dideteksi otomatis dari UAT Script, untuk Lampiran 5B & 6B.")
+                  "Sub API yang digunakan dideteksi otomatis dari UAT Script, untuk Lampiran 5B, 6B & 7B.")
     if not file_ok:
         st.info("⬆️ Unggah UAT Script terlebih dahulu.")
     elif not lampiran_5_6:
-        st.info("ℹ️ Produk **QRIS**: Lampiran 5A/5B/6A/6B belum tersedia (daftar Sub API QRIS belum ada). "
+        st.info("ℹ️ Produk **QRIS**: Lampiran 5A/5B, 6A/6B & 7A/7B belum tersedia (daftar Sub API QRIS belum ada). "
                 "Lampiran 7C & UAT Result tetap dibuat.")
     else:
         validasi = analisa["validasi"]
@@ -473,7 +474,7 @@ with st.container(border=True):
             } for v in validasi],
             column_config={
                 "Lampirkan": st.column_config.CheckboxColumn(
-                    "Lampirkan", help="Centang = Sub API dimasukkan ke Lampiran 5B & 6B", width="small"),
+                    "Lampirkan", help="Centang = Sub API dimasukkan ke Lampiran 5B, 6B & 7B", width="small"),
                 "Status": st.column_config.TextColumn("Status UAT", width="medium"),
                 "Bukti dari UAT": st.column_config.TextColumn("Bukti (no. case & status)", width="large"),
                 "Positif Req": st.column_config.CheckboxColumn("Pos Req", help="Centang = Ѵ, kosong = X", width="small"),
@@ -485,7 +486,7 @@ with st.container(border=True):
             hide_index=True, use_container_width=True, key=f"validasi_{sig}",
         )
         st.caption("Kolom **Pos/Neg Req/Resp**: centang = **Ѵ** (sudah sesuai), kosong = **X** (belum sesuai). "
-                   "Isian ini dipakai di Lampiran 5B & 6B.")
+                   "Isian ini dipakai di Lampiran 5B, 6B & 7B.")
 
         sub_api_tampil = [r["Sub API"] for r in tabel if r["Lampirkan"]]
         tanda = [[bool(r["Positif Req"]), bool(r["Positif Resp"]),
@@ -497,7 +498,7 @@ with st.container(border=True):
         st.markdown("**Data dokumen**")
         m1, m2 = st.columns([3, 2])
         with m1:
-            pengguna = st.text_input("Pengguna Layanan (Lampiran 6B)", value=analisa["pengguna"],
+            pengguna = st.text_input("Pengguna Layanan (Lampiran 6B & 7B)", value=analisa["pengguna"],
                                      key=f"pengguna_{sig}", help="Otomatis dari judul UAT Script; bisa diedit.")
         with m2:
             nomor_surat = st.text_input("Nomor surat (5A/5B)", value=analisa["nomor"],
@@ -542,9 +543,12 @@ with st.container(border=True):
                 lamp6 = lampiran6.convert_lampiran_6_bytes(
                     file_bytes, product_key, penandatangan, pengguna, user_devsite_mitra,
                     tanda=tanda, sub_api_tampil=sub_api_tampil)
+                lamp7 = lampiran7.convert_lampiran_7_bytes(
+                    file_bytes, product_key, penandatangan, pengguna,
+                    tanda=tanda, sub_api_tampil=sub_api_tampil)
             st.session_state.hasil = {
                 "sig": sig, "produk": product_key, "stats": stats, "warnings": warnings,
-                "status": status_counts, "lamp5": lamp5, "lamp6": lamp6,
+                "status": status_counts, "lamp5": lamp5, "lamp6": lamp6, "lamp7": lamp7,
                 "dok_utama": [(lampiran_name, lampiran_bytes), (result_name, result_bytes)],
                 "waktu": datetime.now().strftime("%Y%m%d_%H%M%S"),
             }
@@ -588,6 +592,14 @@ with st.container(border=True):
                  beri_waktu(l6["a_name"]), l6["a_bytes"]),
                 ("🗂️", "Lampiran 6B", f"Matriks asesmen {l6['pengguna'] or 'Pengguna Layanan'}",
                  beri_waktu(l6["b_name"]), l6["b_bytes"]),
+            ]
+        if hasil.get("lamp7"):
+            l7 = hasil["lamp7"]
+            dokumen += [
+                ("🧾", "Lampiran 7A", "Berita acara uji fungsionalitas.",
+                 beri_waktu(l7["a_name"]), l7["a_bytes"]),
+                ("✅", "Lampiran 7B", f"Matriks uji fungsionalitas · {len(l7['sub_api'])} Sub API",
+                 beri_waktu(l7["b_name"]), l7["b_bytes"]),
             ]
 
         zbuf = io.BytesIO()
@@ -704,6 +716,7 @@ with st.expander("ℹ️ Tentang aplikasi ini"):
         - **UAT Result** — semua case & section + Daftar Isi otomatis.
         - **Lampiran 5A/5B** (VA/FT) — Developer Site Penyedia Layanan; nomor surat dari Nomor Referensi UAT.
         - **Lampiran 6A/6B** (VA/FT) — Developer Site Pengguna Layanan; nama PT dari judul UAT.
+        - **Lampiran 7A/7B** (VA/FT) — Berita acara & matriks uji fungsionalitas dengan Pengguna Layanan.
 
         **Validasi API**: Sub API dianggap *digunakan* bila ada case dengan Nama Modul yang sesuai
         berstatus selain *Tidak dites*. Nomor case & status ditampilkan sebagai bukti.

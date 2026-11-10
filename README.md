@@ -14,8 +14,8 @@ Dengan script ini, Anda tidak perlu lagi copy-paste manual data URL, Headers, Re
 - Mapping otomatis skenario UAT ke section Lampiran 7C
 - **Deteksi produk otomatis**: mendukung Fund Transfer/Virtual Account (Balance, Intrabank, Interbank, RTGS, SKNBI, Virtual Account) dan QRIS (Balance Inquiry, API Transaction History List, QR MPM). Tool memilih konfigurasi yang tepat berdasarkan isi file — cukup unggah file, tanpa setelan tambahan.
 - **Aplikasi web**: cukup unggah file, klik proses, unduh hasilnya (tanpa perlu paham teknis)
-- **Dokumen lain dari UAT yang sama**: UAT Result, Lampiran 5A/5B (Developer Site Penyedia Layanan) dan 6A/6B (Developer Site Pengguna Layanan) — dibuat dari template resmi di folder `templates/`
-- **Validasi API otomatis**: Sub API yang digunakan mitra dideteksi dari *Nama Modul* + status di UAT Script (lengkap dengan nomor case sebagai bukti), lalu dipakai untuk tabel 5B & 6B
+- **Dokumen lain dari UAT yang sama**: UAT Result, Lampiran 5A/5B (Developer Site Penyedia Layanan), 6A/6B (Developer Site Pengguna Layanan), dan 7A/7B (Berita Acara Uji Fungsionalitas) — dibuat dari template resmi di folder `templates/`
+- **Validasi API otomatis**: Sub API yang digunakan mitra dideteksi dari *Nama Modul* + status di UAT Script (lengkap dengan nomor case sebagai bukti), lalu dipakai untuk tabel 5B, 6B & 7B
 
 ### Alur di aplikasi
 1. **Unggah UAT Script** — nama PT mitra, nomor referensi, dan produk terbaca otomatis
