@@ -45,17 +45,22 @@ class TestNamaPengguna:
                 "PT Ezeelink Indonesia",
             "User Acceptance Test Script\n<Penambahan Layanan QRIS Merchant Aggregator PT Sender "
             "Integrasi Digital (Kirimo) (SM-26-07-004-BSS-IS)>":
-                "PT Sender Integrasi Digital (Kirimo)",
+                "PT Sender Integrasi Digital",
             "User Acceptance Test Script\n<Penambahan Layanan Virtual Account & Fund Transfer Host "
             "to Host PT Solusi Pembayaran Elektronik (CRING)>":
-                "PT Solusi Pembayaran Elektronik (CRING)",
+                "PT Solusi Pembayaran Elektronik",
             "User Acceptance Test Script\n<Penambahan Layanan QRIS Merchant Aggregator\n"
             "PT Cashlez Worldwide Indonesia (CashUp)>":
-                "PT Cashlez Worldwide Indonesia (CashUp)",
+                "PT Cashlez Worldwide Indonesia",
         }
         for judul, exp in cases.items():
             assert L6.nama_pt_dari_judul(judul) == exp
             assert L6.read_nama_pengguna(_uat_bytes(judul)) == exp
+
+    def test_singkatan_dibuang(self):
+        judul = ("User Acceptance Test Script\n<Penambahan Layanan Virtual Account & Fund Transfer "
+                 "Host to Host PT Fintech Bina Bangsa (Pipo Grup) (FT)>")
+        assert L6.nama_pt_dari_judul(judul) == "PT Fintech Bina Bangsa"
 
     def test_tanpa_pt(self):
         assert L6.nama_pt_dari_judul("User Acceptance Test Script <Penambahan Layanan>") == ""

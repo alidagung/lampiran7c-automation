@@ -53,9 +53,9 @@ def nama_pt_dari_judul(judul):
       "<Penambahan Layanan Fund Transfer Host to Host PT Ezeelink Indonesia - SM-26-04-001-BSS-IS>"
         -> "PT Ezeelink Indonesia"
       "<... PT Sender Integrasi Digital (Kirimo) (SM-26-07-004-BSS-IS)>"
-        -> "PT Sender Integrasi Digital (Kirimo)"
-    Penulisan nama (kurung, singkatan) dipertahankan; hanya nomor SM di
-    belakang yang dibuang. Mengembalikan "" bila tidak ada "PT".
+        -> "PT Sender Integrasi Digital"
+    Hanya NAMA PT yang diambil: nomor SM dan semua keterangan dalam kurung
+    (singkatan / nama brand) dibuang. Mengembalikan "" bila tidak ada "PT".
     """
     teks = re.sub(r"\s+", " ", str(judul or "").replace("<", " ").replace(">", " ")).strip()
     m = re.search(r"\bPT\b.*$", teks)
@@ -63,8 +63,11 @@ def nama_pt_dari_judul(judul):
         return ""
     nama = m.group(0).strip()
     # Buang nomor SM di akhir: " - SM-..." atau " (SM-...)"
-    nama = re.sub(r"\s*[-–]\s*SM-[\w-]+\s*$", "", nama)
-    nama = re.sub(r"\s*\(\s*SM-[\w-]+\s*\)\s*$", "", nama)
+    nama = re.sub(r"\s*[-–]\s*SM-[\w-]+.*$", "", nama)
+    # Buang semua keterangan dalam kurung (singkatan/nama brand/nomor SM),
+    # mis. "(CRING)", "(Pipo Grup)", "(FT)", "(Kirimo)", "(SM-26-...)".
+    nama = re.sub(r"\s*\([^()]*\)", "", nama)
+    nama = re.sub(r"\s+", " ", nama)
     return nama.strip(" -–")
 
 
