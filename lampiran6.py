@@ -32,6 +32,7 @@ from lampiran5 import (
     format_tanggal_pengujian, layanan_digunakan, daftar_layanan as _daftar_layanan_5,
     _replace_regex, _set_cell_text, _unique_cells, _cari_paragraf, _to_bytes,
     nama_file_aman, _set_landscape, _rapikan_tabel,
+    saring_sub_api, pilih_sub_api, resolve_sub_api, layanan_dari_sub,
 )
 
 TEMPLATE_6A = TEMPLATE_DIR / "Lampiran 6A.docx"
@@ -165,13 +166,15 @@ def build_lampiran_6a(tanggal, penandatangan):
     return doc
 
 
-def build_lampiran_6b(pengguna_layanan, user_devsite, tanda=None, layanan_tampil=None):
+def build_lampiran_6b(pengguna_layanan, user_devsite, tanda=None, layanan_tampil=None,
+                      sub_api_tampil=None):
     """
     Args:
         pengguna_layanan: nama PT mitra (diisi ke semua baris)
         user_devsite    : email user DevSite mitra (diisi ke semua baris)
         tanda           : list per baris sub API berisi 4 bool (True=Ѵ, False=X)
-        layanan_tampil  : Layanan API yang ditampilkan (None = semua)
+        layanan_tampil  : Layanan API yang ditampilkan (semua Sub API-nya)
+        sub_api_tampil  : Sub API yang ditampilkan (lebih spesifik); keduanya None = semua
     """
     doc = _template_6b()
     t = doc.tables[0]
@@ -183,20 +186,8 @@ def build_lampiran_6b(pengguna_layanan, user_devsite, tanda=None, layanan_tampil
         for col, ok in zip(KOL_TANDA, flags):
             _set_cell_text(cells[col], TANDA_SESUAI if ok else TANDA_BELUM)
 
-    tampil = set(layanan_tampil) if layanan_tampil is not None else set(daftar_layanan())
     rows = daftar_sub_api()
-    trs = list(t._tbl.tr_lst)[BARIS_DATA_MULAI:]
-    for info, tr in zip(rows, trs):
-        if info["layanan_api"] not in tampil:
-            tr.getparent().remove(tr)
-    nomor, sebelumnya = 0, None
-    for info, tr in zip(rows, trs):
-        if info["layanan_api"] not in tampil:
-            continue
-        if info["layanan_api"] != sebelumnya:
-            nomor += 1
-            sebelumnya = info["layanan_api"]
-            _set_cell_text(_Cell(tr.tc_lst[0], t), str(nomor))
+    saring_sub_api(t, rows, pilih_sub_api(rows, layanan_tampil, sub_api_tampil))
 
     # Halaman landscape + tabel presisi
     _set_landscape(doc)
@@ -206,7 +197,7 @@ def build_lampiran_6b(pengguna_layanan, user_devsite, tanda=None, layanan_tampil
 
 def convert_lampiran_6_bytes(source, product_key, penandatangan, pengguna_layanan,
                              user_devsite, tanda=None, tanggal=None,
-                             layanan_tampil=None):
+                             layanan_tampil=None, sub_api_tampil=None):
     """
     Buat Lampiran 6A & 6B (bytes).
 
@@ -218,7 +209,8 @@ def convert_lampiran_6_bytes(source, product_key, penandatangan, pengguna_layana
         user_devsite    : email user DevSite mitra
         tanda           : isian Ѵ/X per baris (urutan daftar_sub_api())
         tanggal         : date; default hari ini
-        layanan_tampil  : Layanan API 6B; default = yang digunakan menurut UAT
+        layanan_tampil  : Layanan API 6B (semua Sub API-nya)
+        sub_api_tampil  : Sub API 6B; keduanya None = hasil validasi UAT Script
 
     Returns:
         dict {pengguna, tanggal, layanan, a_bytes, a_name, b_bytes, b_name}
@@ -229,22 +221,16 @@ def convert_lampiran_6_bytes(source, product_key, penandatangan, pengguna_layana
     tanggal = tanggal or date.today()
     pengguna = (pengguna_layanan or "").strip() or read_nama_pengguna(source)
 
-    if layanan_tampil is None:
-        import main
-        src = io.BytesIO(source) if isinstance(source, (bytes, bytearray)) else source
-        if hasattr(src, "seek"):
-            src.seek(0)
-        layanan_tampil = layanan_digunakan(main.read_uat_script(src))
-    if not layanan_tampil:
-        layanan_tampil = daftar_layanan()
+    sub_tampil = resolve_sub_api(source, layanan_tampil, sub_api_tampil)
 
     doc_a = build_lampiran_6a(tanggal, penandatangan)
-    doc_b = build_lampiran_6b(pengguna, user_devsite, tanda, layanan_tampil)
+    doc_b = build_lampiran_6b(pengguna, user_devsite, tanda, sub_api_tampil=sub_tampil)
     akhiran = f" - {nama_file_aman(pengguna)}" if pengguna else ""
     return {
         "pengguna": pengguna,
         "tanggal": tanggal,
-        "layanan": list(layanan_tampil),
+        "layanan": layanan_dari_sub(sub_tampil),
+        "sub_api": [r["sub_api"] for r in daftar_sub_api() if r["sub_api"] in sub_tampil],
         "a_bytes": _to_bytes(doc_a),
         "a_name": f"Lampiran 6A - Informasi Uji Developer Site Pengguna Layanan{akhiran}.docx",
         "b_bytes": _to_bytes(doc_b),

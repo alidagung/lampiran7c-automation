@@ -111,33 +111,116 @@ def format_tanggal_pengujian(tgl):
             f"bulan {NAMA_BULAN[tgl.month - 1]} tahun {tgl.year}")
 
 
+# Sub API -> (section UAT yang dicari, fungsi pencocok Nama Modul).
+# section None = cari di SEMUA section. Nama Modul dibandingkan dalam huruf kecil.
+def _modul_mengandung(*kata):
+    return lambda modul: any(k in modul for k in kata)
+
+
+def _modul_sama(*nilai):
+    return lambda modul: modul in nilai
+
+
+SUB_API_KE_MODUL = {
+    "API Balance Inquiry": (("Balance Services",), _modul_mengandung("balance inquiry")),
+    "API Internal Account Inquiry": (("Intrabank Transfer",), _modul_mengandung("internal account inquiry")),
+    "API Intrabank Transfer": (("Intrabank Transfer",), _modul_mengandung("intrabank")),
+    "API External Account Inquiry": (("Interbank Transfer",),
+                                     _modul_mengandung("eksternal account inquiry", "external account inquiry")),
+    "API Interbank Transfer": (("Interbank Transfer",), _modul_mengandung("interbank")),
+    "API RTGS Transfer": (("RTGS Transfer",), _modul_mengandung("rtgs")),
+    "API SKNBI Transfer": (("SKNBI Transfer",), _modul_mengandung("skn")),
+    "API Virtual Account – Inquiry": (("Transfer VA",), _modul_sama("inquiry")),
+    "API Virtual Account – Payment": (("Transfer VA",), _modul_sama("payment")),
+    "API Virtual Account – Inquiry Status": (("Transfer VA",), lambda m: m.startswith("inquiry status")),
+    SUB_API_TSI: (None, _modul_mengandung(MODUL_TSI)),
+}
+
+STATUS_DIGUNAKAN = "digunakan"
+STATUS_TIDAK = "tidak digunakan"
+STATUS_CEK = "perlu dicek"
+
+
+def _status_aktif(hasil_aktual):
+    """True bila case benar-benar dipakai (bukan 'Tidak dites')."""
+    return str(hasil_aktual or "").strip().lower() not in ("", "tidak dites")
+
+
+def validasi_api(uat_data):
+    """
+    Validasi Sub API apa saja yang DIGUNAKAN mitra, langsung dari UAT Script.
+
+    Aturan per Sub API:
+      - Cari case dengan Nama Modul yang cocok (lihat SUB_API_KE_MODUL).
+      - "digunakan"       : minimal satu case cocok berstatus bukan "Tidak dites"
+      - "tidak digunakan" : case cocok ada, tetapi semuanya "Tidak dites"
+      - "perlu dicek"     : tidak ada case dengan Nama Modul yang cocok; status
+                            diperkirakan dari section-nya (ada case aktif =
+                            dianggap digunakan). Mohon dicek manual.
+
+    Returns:
+        list of dict (urut sesuai template 5B):
+          {layanan_api, sub_api, status, digunakan (bool), bukti (str)}
+    """
+    hasil = []
+    for info in daftar_sub_api():
+        sub = info["sub_api"]
+        sections, cocok = SUB_API_KE_MODUL.get(sub, (LAYANAN_KE_SECTION.get(info["layanan_api"], ()), None))
+        nama_section = list(uat_data.keys()) if sections is None else list(sections)
+
+        kasus = []
+        if cocok is not None:
+            for s in nama_section:
+                for r in uat_data.get(s, []):
+                    if cocok(str(r.get("nama_modul", "")).strip().lower()):
+                        kasus.append(r)
+
+        if kasus:
+            aktif = [r for r in kasus if _status_aktif(r.get("hasil_aktual"))]
+            if aktif:
+                status = STATUS_DIGUNAKAN
+                bukti = ", ".join(f"{r.get('nomor_kasus_tes', '?')} {str(r.get('hasil_aktual', '')).strip()}"
+                                  for r in aktif[:4]) + (" …" if len(aktif) > 4 else "")
+            else:
+                status = STATUS_TIDAK
+                bukti = f"{len(kasus)} case, semua Tidak dites"
+        elif sections is None:
+            # Sub API lintas-section (mis. Transaction Status Inquiry): tanpa
+            # Nama Modul yang cocok tidak bisa diperkirakan -> tidak digunakan,
+            # tetapi ditandai agar dicek manual.
+            status, bukti = STATUS_CEK, "Nama Modul tidak ditemukan di UAT Script"
+            info = {**info, "_aktif_section": False}
+        else:
+            sec_rows = [r for s in nama_section for r in uat_data.get(s, [])]
+            if not sec_rows:
+                status, bukti = STATUS_TIDAK, "tidak ada di UAT Script"
+            else:
+                status = STATUS_CEK
+                aktif = any(_status_aktif(r.get("hasil_aktual")) for r in sec_rows)
+                bukti = ("Nama Modul tidak dikenali; section "
+                         + ("ada case aktif" if aktif else "semua Tidak dites"))
+                info = {**info, "_aktif_section": aktif}
+        digunakan = status == STATUS_DIGUNAKAN or (status == STATUS_CEK and info.get("_aktif_section", False))
+        hasil.append({"layanan_api": info["layanan_api"], "sub_api": sub,
+                      "status": status, "digunakan": digunakan, "bukti": bukti})
+    return hasil
+
+
+def sub_api_digunakan(uat_data):
+    """Daftar nama Sub API yang digunakan mitra menurut UAT Script."""
+    return [v["sub_api"] for v in validasi_api(uat_data) if v["digunakan"]]
+
+
 def layanan_digunakan(uat_data):
     """
     Daftar Layanan API (urut sesuai template 5B) yang digunakan mitra menurut
-    UAT Script.
+    UAT Script = Layanan yang minimal satu Sub API-nya digunakan.
 
     Args:
         uat_data: dict hasil main.read_uat_script()
     """
-    hasil = []
-    for layanan in daftar_layanan():
-        if layanan == LAYANAN_TSI:
-            dipakai = any(
-                MODUL_TSI in str(r.get("nama_modul", "")).strip().lower()
-                and str(r.get("hasil_aktual", "")).strip().lower() not in ("", "tidak dites")
-                for rows in uat_data.values() for r in rows
-            )
-            if dipakai:
-                hasil.append(layanan)
-            continue
-        sections = LAYANAN_KE_SECTION.get(layanan, ())
-        dipakai = any(
-            str(r.get("hasil_aktual", "")).strip().lower() not in ("", "tidak dites")
-            for s in sections for r in uat_data.get(s, [])
-        )
-        if dipakai:
-            hasil.append(layanan)
-    return hasil
+    pakai = {v["layanan_api"] for v in validasi_api(uat_data) if v["digunakan"]}
+    return [lay for lay in daftar_layanan() if lay in pakai]
 
 
 # ============================================================
@@ -426,7 +509,8 @@ def build_lampiran_5a(nomor_surat, tanggal, penandatangan):
     return doc
 
 
-def build_lampiran_5b(nomor_surat, user_devsite, tanda=None, layanan_tampil=None):
+def build_lampiran_5b(nomor_surat, user_devsite, tanda=None, layanan_tampil=None,
+                      sub_api_tampil=None):
     """
     Args:
         nomor_surat : str
@@ -434,8 +518,9 @@ def build_lampiran_5b(nomor_surat, user_devsite, tanda=None, layanan_tampil=None
         tanda       : list (per baris sub API) berisi 4 bool
                       [positif_req, positif_resp, negatif_req, negatif_resp];
                       True -> Ѵ, False -> X. None = semua Ѵ.
-        layanan_tampil: daftar Layanan API yang ditampilkan (lainnya dihapus
-                      beserta semua Sub API-nya). None = semua.
+        layanan_tampil: daftar Layanan API yang ditampilkan (semua Sub API-nya).
+        sub_api_tampil: daftar Sub API yang ditampilkan (lebih spesifik; bila
+                      diisi, mengalahkan layanan_tampil). Keduanya None = semua.
     """
     doc = _template_5b()
 
@@ -452,9 +537,9 @@ def build_lampiran_5b(nomor_surat, user_devsite, tanda=None, layanan_tampil=None
         for col, ok in zip(KOL_TANDA, flags):
             _set_cell_text(cells[col], TANDA_SESUAI if ok else TANDA_BELUM)
 
-    # Saring layanan (None = semua) & nomori ulang kolom No
-    _saring_layanan(t, set(layanan_tampil) if layanan_tampil is not None
-                    else set(daftar_layanan()))
+    # Saring Sub API (None = semua) & nomori ulang kolom No
+    rows = daftar_sub_api()
+    saring_sub_api(t, rows, pilih_sub_api(rows, layanan_tampil, sub_api_tampil))
 
     # Halaman landscape + tabel presisi
     _set_landscape(doc)
@@ -462,26 +547,135 @@ def build_lampiran_5b(nomor_surat, user_devsite, tanda=None, layanan_tampil=None
     return doc
 
 
-def _saring_layanan(table, tampil):
+def _vmerge(tc):
+    tcPr = tc.tcPr
+    el = tcPr.find(qn("w:vMerge")) if tcPr is not None else None
+    if el is None:
+        return None
+    return el.get(qn("w:val")) or "continue"
+
+
+def _set_vmerge(tc, nilai):
+    """nilai: 'restart' / 'continue' / None (hapus gabungan)."""
+    tcPr = tc.get_or_add_tcPr()
+    el = tcPr.find(qn("w:vMerge"))
+    if nilai is None:
+        if el is not None:
+            tcPr.remove(el)
+        return
+    if el is None:
+        el = OxmlElement("w:vMerge")
+        tcPr.append(el)
+    if nilai == "restart":
+        el.set(qn("w:val"), "restart")
+    elif qn("w:val") in el.attrib:
+        del el.attrib[qn("w:val")]
+
+
+def saring_sub_api(table, rows_info, tampil_sub):
     """
-    Hapus baris Layanan API yang tidak ditampilkan (satu grup utuh beserta
-    semua Sub API-nya, sehingga sel gabungan No/Layanan tetap utuh), lalu
-    nomori ulang kolom No secara berurutan (1, 2, 3, ...).
+    Tampilkan hanya Sub API dalam `tampil_sub` (set nama Sub API).
+
+    Baris Sub API lain dihapus. Sel gabungan vertikal (No, Layanan API, User,
+    dsb.) disusun ulang agar tetap rapi walau baris pertama grup terhapus.
+    Kolom No dinomori ulang 1, 2, 3, ... per Layanan API.
+
+    Args:
+        table     : tabel matriks (5B / 6B)
+        rows_info : list dict {layanan_api, sub_api} sejajar baris data template
+        tampil_sub: set nama Sub API yang ditampilkan
+    """
+    trs = list(table._tbl.tr_lst)[BARIS_DATA_MULAI:]
+    grup = []
+    for info, tr in zip(rows_info, trs):
+        if grup and grup[-1][0] == info["layanan_api"]:
+            grup[-1][1].append((info, tr))
+        else:
+            grup.append((info["layanan_api"], [(info, tr)]))
+
+    nomor = 0
+    for _layanan, items in grup:
+        first_tr = items[0][1]
+        kolom_gabung = [ci for ci, tc in enumerate(first_tr.tc_lst) if _vmerge(tc) == "restart"]
+        sumber = {ci: copy.deepcopy(first_tr.tc_lst[ci]) for ci in kolom_gabung}
+        simpan = [tr for info, tr in items if info["sub_api"] in tampil_sub]
+        for _info, tr in items:
+            if tr not in simpan:
+                tr.getparent().remove(tr)
+        if not simpan:
+            continue
+
+        baru_pertama = simpan[0]
+        if baru_pertama is not first_tr:
+            # Pindahkan isi sel gabungan (No/Layanan/User/...) ke baris pertama baru
+            for ci in kolom_gabung:
+                lama = baru_pertama.tc_lst[ci]
+                pengganti = copy.deepcopy(sumber[ci])
+                lama.addprevious(pengganti)
+                lama.getparent().remove(lama)
+        for ci in kolom_gabung:
+            for k, tr in enumerate(simpan):
+                tc = tr.tc_lst[ci]
+                if len(simpan) == 1:
+                    _set_vmerge(tc, None)
+                else:
+                    _set_vmerge(tc, "restart" if k == 0 else "continue")
+
+        nomor += 1
+        _set_cell_text(_Cell(baru_pertama.tc_lst[0], table), str(nomor))
+
+
+def pilih_sub_api(rows_info, layanan_tampil=None, sub_api_tampil=None):
+    """Set Sub API yang ditampilkan (sub_api_tampil > layanan_tampil > semua)."""
+    if sub_api_tampil is not None:
+        return set(sub_api_tampil)
+    if layanan_tampil is not None:
+        return _sub_dari_layanan(rows_info, layanan_tampil)
+    return {r["sub_api"] for r in rows_info}
+
+
+def _sub_dari_layanan(rows_info, layanan_tampil):
+    return {r["sub_api"] for r in rows_info if r["layanan_api"] in set(layanan_tampil)}
+
+
+def _saring_layanan(table, tampil):
+    """Kompatibilitas: saring per Layanan API (semua Sub API-nya)."""
+    rows = daftar_sub_api()
+    saring_sub_api(table, rows, _sub_dari_layanan(rows, tampil))
+
+
+def baca_uat(source):
+    """read_uat_script() untuk path/bytes/file-like."""
+    import main  # impor lokal (main tidak bergantung pada modul ini)
+    if isinstance(source, (bytes, bytearray)):
+        src = io.BytesIO(source)
+    else:
+        src = source
+        if hasattr(src, "seek"):
+            src.seek(0)
+    return main.read_uat_script(src)
+
+
+def resolve_sub_api(source, layanan_tampil=None, sub_api_tampil=None):
+    """
+    Tentukan Sub API yang ditampilkan: pilihan manual bila ada, bila tidak
+    hasil validasi UAT Script. Bila hasilnya kosong, tampilkan semua (tabel
+    tidak boleh kosong).
     """
     rows = daftar_sub_api()
-    trs = list(table._tbl.tr_lst)[BARIS_DATA_MULAI:]
-    for info, tr in zip(rows, trs):
-        if info["layanan_api"] not in tampil:
-            tr.getparent().remove(tr)
+    if sub_api_tampil is not None or layanan_tampil is not None:
+        pilih = pilih_sub_api(rows, layanan_tampil, sub_api_tampil)
+    else:
+        pilih = set(sub_api_digunakan(baca_uat(source)))
+    return pilih or {r["sub_api"] for r in rows}
 
-    nomor, sebelumnya = 0, None
-    for info, tr in zip(rows, trs):
-        if info["layanan_api"] not in tampil:
-            continue
-        if info["layanan_api"] != sebelumnya:
-            nomor += 1
-            sebelumnya = info["layanan_api"]
-            _set_cell_text(_Cell(tr.tc_lst[0], table), str(nomor))
+
+def layanan_dari_sub(sub_tampil):
+    out = []
+    for r in daftar_sub_api():
+        if r["sub_api"] in sub_tampil and r["layanan_api"] not in out:
+            out.append(r["layanan_api"])
+    return out
 
 
 def _to_bytes(doc):
@@ -496,7 +690,7 @@ def nama_file_aman(teks):
 
 def convert_lampiran_5_bytes(source, product_key, penandatangan, user_devsite,
                              tanda=None, tanggal=None, nomor_surat=None,
-                             layanan_tampil=None):
+                             layanan_tampil=None, sub_api_tampil=None):
     """
     Buat Lampiran 5A & 5B (bytes) dari file UAT Script.
 
@@ -508,11 +702,12 @@ def convert_lampiran_5_bytes(source, product_key, penandatangan, user_devsite,
         tanda        : isian Ѵ/X per baris (lihat build_lampiran_5b)
         tanggal      : date; default = hari ini (saat diproses)
         nomor_surat  : override manual; default = Nomor Referensi di UAT
-        layanan_tampil: Layanan API yang ditampilkan di 5B; default = yang
-                       digunakan menurut UAT Script (layanan_digunakan)
+        layanan_tampil: Layanan API yang ditampilkan di 5B (semua Sub API-nya)
+        sub_api_tampil: Sub API yang ditampilkan di 5B (lebih spesifik).
+                       Keduanya None -> hasil validasi_api() dari UAT Script.
 
     Returns:
-        dict {nomor_surat, tanggal, layanan, a_bytes, a_name, b_bytes, b_name}
+        dict {nomor_surat, tanggal, layanan, sub_api, a_bytes, a_name, b_bytes, b_name}
         atau None bila produk belum didukung.
     """
     if product_key not in PRODUK_DIDUKUNG:
@@ -520,27 +715,16 @@ def convert_lampiran_5_bytes(source, product_key, penandatangan, user_devsite,
     tanggal = tanggal or date.today()
     nomor = (nomor_surat or "").strip() or read_nomor_referensi(source)
 
-    if layanan_tampil is None:
-        import main  # impor lokal (main tidak bergantung pada modul ini)
-        if isinstance(source, (bytes, bytearray)):
-            uat_src = io.BytesIO(source)
-        else:
-            uat_src = source
-            if hasattr(uat_src, "seek"):
-                uat_src.seek(0)
-        layanan_tampil = layanan_digunakan(main.read_uat_script(uat_src))
-    if not layanan_tampil:
-        # Tidak ada layanan terdeteksi (mis. nama section tidak dikenali):
-        # jangan kosongkan tabel, tampilkan semua Layanan API template.
-        layanan_tampil = daftar_layanan()
+    sub_tampil = resolve_sub_api(source, layanan_tampil, sub_api_tampil)
 
     doc_a = build_lampiran_5a(nomor, tanggal, penandatangan)
-    doc_b = build_lampiran_5b(nomor, user_devsite, tanda, layanan_tampil)
+    doc_b = build_lampiran_5b(nomor, user_devsite, tanda, sub_api_tampil=sub_tampil)
     akhiran = f" - {nama_file_aman(nomor)}" if nomor else ""
     return {
         "nomor_surat": nomor,
         "tanggal": tanggal,
-        "layanan": list(layanan_tampil),
+        "layanan": layanan_dari_sub(sub_tampil),
+        "sub_api": [r["sub_api"] for r in daftar_sub_api() if r["sub_api"] in sub_tampil],
         "a_bytes": _to_bytes(doc_a),
         "a_name": f"Lampiran 5A - Informasi Uji Developer Site{akhiran}.docx",
         "b_bytes": _to_bytes(doc_b),

@@ -1,41 +1,67 @@
 """
-Aplikasi Web Lampiran 7C Automation
-===================================
+Aplikasi Web Automation Dokumen ASPI
+====================================
 Aplikasi web berbasis Streamlit untuk mengubah file UAT Script (Excel) menjadi
-dokumen Lampiran 7C ASPI dan UAT Result (Word).
+dokumen ASPI (Word): Lampiran 7C, UAT Result, Lampiran 5A/5B, dan 6A/6B.
+
+Alur (3 langkah):
+    1. Unggah UAT Script  -> info mitra (nama PT, nomor referensi) langsung tampil
+    2. Validasi API       -> Sub API yang digunakan dideteksi otomatis dari UAT
+                             Script (bisa dikoreksi), isi data mitra
+    3. Buat & unduh       -> satu klik membuat semua dokumen, unduh satu per
+                             satu atau sekaligus (.zip)
 
 Cara pakai:
-    1. Install dependency:  pip install -r requirements.txt
-    2. Jalankan aplikasi:   streamlit run app.py
-    3. Browser akan terbuka otomatis. Pilih produk, unggah file UAT Script,
-       klik "Proses", lalu unduh kedua dokumen hasilnya.
+    pip install -r requirements.txt
+    streamlit run app.py
 """
 
-from datetime import datetime
+import io
+import json
+import zipfile
+from datetime import date, datetime
+from pathlib import Path
 
 import streamlit as st
 
 from main import (
     convert_uat_to_lampiran_bytes,
     convert_uat_to_result_bytes,
+    detect_product,
+    read_uat_script,
     PRODUCT_PROFILES,
     OUTPUT_FILENAME,
 )
-import io
-import json
-import zipfile
-from datetime import date
-from pathlib import Path
-
 import lampiran5
 import lampiran6
 
-# Pengaturan Lampiran 5A/5B disimpan lokal (tidak ikut ke GitHub) agar tidak
-# perlu diketik ulang setiap kali.
+# ============================================================
+# KONSTANTA & PENGATURAN LOKAL
+# ============================================================
+
+PRODUCT_OPTIONS = {
+    "Deteksi otomatis": "AUTO",
+    "Fund Transfer & Virtual Account (VA/FT)": "FT_VA",
+    "QRIS": "QRIS",
+}
+PRODUCT_LABEL = {"FT_VA": "VA / Fund Transfer", "QRIS": "QRIS"}
+
+BRAND = "#ED7D31"
+BRAND_DARK = "#C55A11"
+MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+STATUS_LABEL = {
+    lampiran5.STATUS_DIGUNAKAN: "✅ Digunakan",
+    lampiran5.STATUS_TIDAK: "⛔ Tidak digunakan",
+    lampiran5.STATUS_CEK: "⚠️ Perlu dicek",
+}
+
+# Pengaturan yang jarang berubah (penandatangan, user DevSite bank) disimpan di
+# komputer pengguna (tidak ikut ke GitHub) agar tidak perlu diketik ulang.
 PENGATURAN_FILE = Path(__file__).resolve().parent / "pengaturan_lampiran5.json"
 
 
-def muat_pengaturan_5():
+def muat_pengaturan():
     data = {**lampiran5.default_penandatangan(),
             "user_devsite": lampiran5.default_user_devsite()}
     try:
@@ -46,131 +72,114 @@ def muat_pengaturan_5():
     return data
 
 
-@st.cache_data(show_spinner=False)
-def layanan_dari_uat(file_bytes):
-    """Layanan API yang digunakan mitra menurut UAT Script (untuk Lampiran 5B)."""
-    from main import read_uat_script
-    try:
-        return lampiran5.layanan_digunakan(read_uat_script(io.BytesIO(file_bytes)))
-    except Exception:  # noqa: BLE001 - file belum valid -> tampilkan semua
-        return lampiran5.daftar_layanan()
-
-
-@st.cache_data(show_spinner=False)
-def pengguna_dari_uat(file_bytes):
-    """Nama PT mitra dari judul UAT Script (untuk Lampiran 6B)."""
-    try:
-        return lampiran6.read_nama_pengguna(io.BytesIO(file_bytes))
-    except Exception:  # noqa: BLE001
-        return ""
-
-
-def simpan_pengaturan_5(data):
+def simpan_pengaturan(data):
     PENGATURAN_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-# Label produk untuk dropdown (tampilan -> kunci di PRODUCT_PROFILES / "AUTO")
-PRODUCT_OPTIONS = {
-    "Deteksi otomatis": "AUTO",
-    "Fund Transfer & Virtual Account (VA/FT)": "FT_VA",
-    "QRIS": "QRIS",
-}
-PRODUCT_LABEL = {"FT_VA": "Fund Transfer & Virtual Account (VA/FT)", "QRIS": "QRIS"}
 
-# Palet warna brand
-BRAND = "#ED7D31"       # oranye ASPI
-BRAND_DARK = "#C55A11"
-OK_COLOR = "#2e7d32"
-WARN_COLOR = "#b26a00"
+@st.cache_data(show_spinner=False)
+def analisa_uat(file_bytes):
+    """
+    Baca UAT Script sekali (di-cache) untuk informasi mitra & validasi API.
+    Tidak mengubah file apa pun.
+    """
+    hasil = {"ok": True, "error": "", "produk": None, "nomor": "", "pengguna": "",
+             "validasi": [], "jumlah_case": 0, "jumlah_section": 0}
+    try:
+        uat = read_uat_script(io.BytesIO(file_bytes))
+        hasil["produk"] = detect_product(uat)
+        hasil["validasi"] = lampiran5.validasi_api(uat)
+        hasil["jumlah_case"] = sum(len(v) for v in uat.values())
+        hasil["jumlah_section"] = len(uat)
+    except Exception as e:  # noqa: BLE001
+        hasil.update(ok=False, error=str(e))
+    for kunci, fungsi in (("nomor", lampiran5.read_nomor_referensi),
+                          ("pengguna", lampiran6.read_nama_pengguna)):
+        try:
+            hasil[kunci] = fungsi(io.BytesIO(file_bytes))
+        except Exception:  # noqa: BLE001
+            pass
+    return hasil
 
 
 # ============================================================
-# KONFIGURASI HALAMAN
+# HALAMAN & GAYA
 # ============================================================
 
 st.set_page_config(
-    page_title="Automation Lampiran 7C ASPI",
+    page_title="Automation Dokumen ASPI",
     page_icon="📄",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-
-# ============================================================
-# CSS KUSTOM (tema korporat, kartu, bayangan halus)
-# ============================================================
-
 st.markdown(
     f"""
     <style>
-    .block-container {{ padding-top: 1.6rem; max-width: 1180px; }}
+    .block-container {{ padding-top: 1.4rem; max-width: 1200px; }}
 
-    /* Hero header */
     .hero {{
         background: linear-gradient(120deg, {BRAND} 0%, {BRAND_DARK} 100%);
-        padding: 30px 38px; border-radius: 18px; color: #fff;
-        box-shadow: 0 12px 30px rgba(237,125,49,0.30);
-        display: flex; align-items: center; gap: 22px;
+        padding: 22px 30px; border-radius: 18px; color: #fff;
+        box-shadow: 0 10px 26px rgba(237,125,49,0.28);
+        display: flex; align-items: center; gap: 18px; margin-bottom: 14px;
     }}
     .hero-logo {{
-        width: 64px; height: 64px; border-radius: 16px;
-        background: rgba(255,255,255,0.18);
-        display:flex; align-items:center; justify-content:center;
-        font-size: 34px; flex-shrink: 0;
-        border: 1px solid rgba(255,255,255,0.35);
+        width: 54px; height: 54px; border-radius: 14px; flex-shrink: 0;
+        background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35);
+        display:flex; align-items:center; justify-content:center; font-size: 28px;
     }}
-    .hero h1 {{ color:#fff; font-size: 1.85rem; margin: 0 0 4px 0; font-weight: 800; letter-spacing:-0.3px; }}
-    .hero p  {{ color:#fff8f2; font-size: 1.0rem; margin: 0; opacity: 0.96; }}
+    .hero h1 {{ color:#fff; font-size: 1.6rem; margin: 0 0 2px 0; font-weight: 800; letter-spacing:-0.3px; }}
+    .hero p  {{ color:#fff8f2; font-size: 0.95rem; margin: 0; }}
 
-    /* Kartu umum */
-    .card {{
-        background: var(--secondary-background-color, #ffffff);
-        border: 1px solid rgba(0,0,0,0.07);
-        border-radius: 14px; padding: 18px 20px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.04);
-        margin-bottom: 4px;
+    /* Stepper */
+    .stepper {{ display:flex; gap: 10px; margin: 2px 0 16px 0; flex-wrap: wrap; }}
+    .step {{
+        flex: 1; min-width: 180px; display:flex; align-items:center; gap:10px;
+        padding: 10px 14px; border-radius: 12px; font-weight: 600; font-size: 0.92rem;
+        background: #f4f5f7; color: #6b7280; border: 1px solid rgba(0,0,0,0.05);
     }}
+    .step .num {{
+        width: 26px; height: 26px; border-radius: 50%; display:flex; align-items:center;
+        justify-content:center; font-size: 0.82rem; font-weight: 800;
+        background: #d9dce1; color: #fff; flex-shrink: 0;
+    }}
+    .step.done {{ background: #eaf7ee; color: #1e7e38; }}
+    .step.done .num {{ background: #2e9e4f; }}
+    .step.active {{ background: #fff3ea; color: {BRAND_DARK}; border-color: rgba(237,125,49,0.35); }}
+    .step.active .num {{ background: {BRAND}; }}
 
-    /* Kartu langkah */
-    .step-card {{
-        background: var(--secondary-background-color, #faf8f6);
-        border: 1px solid rgba(0,0,0,0.06);
-        border-left: 5px solid {BRAND};
-        border-radius: 12px; padding: 13px 18px; margin: 10px 0 2px 0;
-    }}
-    .step-num {{
-        display:inline-flex; align-items:center; justify-content:center;
-        width: 26px; height: 26px; border-radius: 50%;
-        background:{BRAND}; color:#fff; font-weight:700; font-size:0.85rem; margin-right: 10px;
-    }}
-    .step-title {{ font-weight: 700; font-size: 1.08rem; }}
+    .judul-langkah {{ font-size: 1.12rem; font-weight: 800; margin: 0 0 2px 0; }}
+    .sub-langkah {{ color: #6b7280; font-size: 0.88rem; margin-bottom: 10px; }}
 
-    /* Badge */
-    .badge {{ display:inline-block; padding: 3px 13px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; }}
-    .badge-ftva {{ background:#e8f0fe; color:#1a56db; }}
-    .badge-qris {{ background:#e9f9ee; color:#177245; }}
-    .badge-auto {{ background:#fdf0e6; color:{BRAND_DARK}; }}
+    /* Chip info mitra */
+    .chips {{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-top: 6px; }}
+    .chip {{ background:#faf8f6; border:1px solid rgba(0,0,0,0.06); border-radius: 12px; padding: 10px 14px; }}
+    .chip .k {{ font-size: 0.74rem; color:#6b7280; font-weight:700; text-transform: uppercase; letter-spacing: .3px; }}
+    .chip .v {{ font-size: 0.98rem; font-weight: 700; color:#1f2937; word-break: break-word; }}
+    .chip .v.kosong {{ color:#c62828; }}
 
-    /* Stat card */
-    .stat {{
-        border-radius: 14px; padding: 16px 18px; color:#fff; text-align:left;
-        box-shadow: 0 4px 14px rgba(0,0,0,0.10);
-    }}
-    .stat .lbl {{ font-size: 0.82rem; opacity: 0.92; font-weight:600; margin-bottom:2px; }}
-    .stat .val {{ font-size: 1.9rem; font-weight: 800; line-height:1; }}
+    /* Ringkasan validasi */
+    .pill {{ display:inline-block; padding: 4px 12px; border-radius: 999px; font-size: 0.84rem;
+             font-weight: 700; margin: 0 6px 6px 0; }}
+    .pill-ok {{ background:#eaf7ee; color:#1e7e38; }}
+    .pill-no {{ background:#f4f5f7; color:#6b7280; }}
+    .pill-cek {{ background:#fff4e0; color:#b26a00; }}
+
+    /* Kartu statistik */
+    .stat {{ border-radius: 14px; padding: 14px 16px; color:#fff; box-shadow: 0 4px 14px rgba(0,0,0,0.10); }}
+    .stat .lbl {{ font-size: 0.8rem; opacity: 0.92; font-weight:600; }}
+    .stat .val {{ font-size: 1.75rem; font-weight: 800; line-height:1.1; }}
     .stat-pass {{ background: linear-gradient(135deg,#2e9e4f,#1e7e38); }}
     .stat-fail {{ background: linear-gradient(135deg,#e24b4b,#c62828); }}
     .stat-na   {{ background: linear-gradient(135deg,#f0a93b,#d9871f); }}
     .stat-tot  {{ background: linear-gradient(135deg,#5b6b7a,#3c4753); }}
 
-    /* Tombol */
-    .stButton>button, .stDownloadButton>button {{
-        border-radius: 11px; font-weight: 700; padding: 0.6rem 1rem;
-    }}
-    div[data-testid="stMetric"] {{
-        background: var(--secondary-background-color, #faf8f6);
-        border: 1px solid rgba(0,0,0,0.06); border-radius: 12px; padding: 12px 16px;
-    }}
-    /* File uploader lebih menonjol */
+    /* Kartu dokumen */
+    .doc-ikon {{ font-size: 1.5rem; line-height: 1; }}
+    .doc-judul {{ font-weight: 800; font-size: 1.0rem; margin-top: 4px; }}
+    .doc-ket {{ color:#6b7280; font-size: 0.84rem; min-height: 2.4em; }}
+
+    .stButton>button, .stDownloadButton>button {{ border-radius: 11px; font-weight: 700; }}
     section[data-testid="stFileUploaderDropzone"] {{
         border: 2px dashed {BRAND}; border-radius: 14px; background: #fff8f2;
     }}
@@ -181,44 +190,60 @@ st.markdown(
 
 
 def stat_card(label, value, kind):
-    st.markdown(
-        f'<div class="stat stat-{kind}"><div class="lbl">{label}</div>'
-        f'<div class="val">{value}</div></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(f'<div class="stat stat-{kind}"><div class="lbl">{label}</div>'
+                f'<div class="val">{value}</div></div>', unsafe_allow_html=True)
+
+
+def chip(k, v, kosong_teks="belum ada"):
+    nilai = v if v else kosong_teks
+    kelas = "v" if v else "v kosong"
+    return f'<div class="chip"><div class="k">{k}</div><div class="{kelas}">{nilai}</div></div>'
+
+
+def judul_langkah(nomor, judul, sub):
+    st.markdown(f'<div class="judul-langkah">{nomor} · {judul}</div>'
+                f'<div class="sub-langkah">{sub}</div>', unsafe_allow_html=True)
 
 
 # ============================================================
-# SIDEBAR
+# SIDEBAR — PENGATURAN TETAP
 # ============================================================
 
+_peng = muat_pengaturan()
 with st.sidebar:
-    st.markdown(f"<h3 style='margin-bottom:0'>📄 Lampiran 7C ASPI</h3>", unsafe_allow_html=True)
-    st.caption("Automation UAT Script → Lampiran 7C & UAT Result")
+    st.markdown("### 📄 Automation Dokumen ASPI")
+    st.caption("UAT Script → Lampiran 7C, UAT Result, 5A/5B, 6A/6B")
     st.divider()
 
-    st.markdown("#### 🧭 Langkah singkat")
-    st.markdown(
-        "1. Pilih **jenis produk**\n"
-        "2. **Unggah** file UAT Script (.xlsx)\n"
-        "3. Klik **Proses**\n"
-        "4. **Unduh** dokumen hasil"
-    )
-    st.divider()
+    st.markdown("#### ⚙️ Pengaturan tetap")
+    st.caption("Jarang berubah. Dipakai di Lampiran 5A & 6A (penandatangan) "
+               "dan 5B (user DevSite bank).")
+    jabatan_1 = st.text_input("Jabatan penandatangan 1", value=_peng["jabatan_1"])
+    nama_1 = st.text_input("Nama penandatangan 1", value=_peng["nama_1"])
+    jabatan_2 = st.text_input("Jabatan penandatangan 2", value=_peng["jabatan_2"])
+    nama_2 = st.text_input("Nama penandatangan 2", value=_peng["nama_2"])
+    user_devsite_bank = st.text_input("User DevSite bank (Lampiran 5B)", value=_peng["user_devsite"])
+    if st.button("💾 Simpan pengaturan", use_container_width=True):
+        simpan_pengaturan({"jabatan_1": jabatan_1, "nama_1": nama_1,
+                           "jabatan_2": jabatan_2, "nama_2": nama_2,
+                           "user_devsite": user_devsite_bank})
+        st.success("Tersimpan untuk penggunaan berikutnya.")
 
-    st.markdown("#### 📦 Produk didukung")
-    st.markdown(
-        "- **VA/FT** — Balance, Intrabank, Interbank, RTGS, SKNBI, Virtual Account\n"
-        "- **QRIS** — Balance Inquiry, Transaction History, QR MPM"
-    )
     st.divider()
-    st.caption("💡 UAT Result: buka di Word → klik kanan Daftar Isi → *Update Field* "
-               "untuk memunculkan nomor halaman.")
-    st.caption("🔒 Berjalan 100% lokal — data tidak dikirim ke internet.")
+    with st.expander("💡 Tips"):
+        st.markdown(
+            "- Nomor surat diambil dari **Nomor Referensi** UAT Script.\n"
+            "- Tanggal pengujian = **tanggal hari ini**.\n"
+            "- UAT Result: di Word klik kanan Daftar Isi → **Update Field**.\n"
+            "- Aplikasi berjalan **100% lokal**, data tidak dikirim ke internet."
+        )
+
+penandatangan = {"jabatan_1": jabatan_1, "nama_1": nama_1,
+                 "jabatan_2": jabatan_2, "nama_2": nama_2}
 
 
 # ============================================================
-# HERO HEADER
+# HERO
 # ============================================================
 
 st.markdown(
@@ -226,486 +251,344 @@ st.markdown(
     <div class="hero">
         <div class="hero-logo">📄</div>
         <div>
-            <h1>Automation Lampiran 7C ASPI</h1>
-            <p>Ubah UAT Script (Excel) menjadi Lampiran 7C &amp; UAT Result (Word) secara otomatis —
-            unggah, proses, unduh. Mendukung Fund Transfer/VA dan QRIS.</p>
+            <h1>Automation Dokumen ASPI</h1>
+            <p>Unggah UAT Script, cek API yang digunakan, lalu unduh semua lampiran sekaligus.</p>
         </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
-st.write("")
+
+stepper_slot = st.empty()   # diisi setelah status tiap langkah diketahui
 
 
 # ============================================================
-# LANGKAH 1 — PILIH PRODUK & UNGGAH
+# LANGKAH 1 — UNGGAH
 # ============================================================
 
-st.markdown(
-    '<div class="step-card"><span class="step-num">1</span>'
-    '<span class="step-title">Pilih produk &amp; unggah file UAT Script</span></div>',
-    unsafe_allow_html=True,
-)
-
-col_a, col_b = st.columns([1, 1])
-
-with col_a:
-    product_label = st.selectbox(
-        "Jenis produk UAT Script",
-        options=list(PRODUCT_OPTIONS.keys()),
-        index=0,
-        help=(
-            "Pilih 'Fund Transfer & Virtual Account' untuk UAT VA/FT, atau 'QRIS' "
-            "untuk UAT QRIS. Pilihan ini MEMAKSA konfigurasi produk. Gunakan "
-            "'Deteksi otomatis' bila ingin aplikasi menebak sendiri dari isi file."
-        ),
-    )
+with st.container(border=True):
+    judul_langkah(1, "Unggah UAT Script", "File Excel hasil UAT (.xlsx). Informasi mitra dibaca otomatis.")
+    c_up, c_prod = st.columns([3, 2])
+    with c_up:
+        uploaded_file = st.file_uploader("File UAT Script (.xlsx)", type=["xlsx"],
+                                         label_visibility="collapsed")
+    with c_prod:
+        product_label = st.selectbox(
+            "Jenis produk", options=list(PRODUCT_OPTIONS.keys()), index=0,
+            help="Biarkan 'Deteksi otomatis', atau paksa VA/FT / QRIS bila deteksi keliru.",
+        )
     selected_product = PRODUCT_OPTIONS[product_label]
 
-    if selected_product == "FT_VA":
-        st.markdown('<span class="badge badge-ftva">MODE VA/FT</span>', unsafe_allow_html=True)
-        st.caption("Section: Balance Inquiry, Intrabank, Interbank, RTGS, SKNBI, Virtual Account.")
-    elif selected_product == "QRIS":
-        st.markdown('<span class="badge badge-qris">MODE QRIS</span>', unsafe_allow_html=True)
-        st.caption("Section: Balance Inquiry, API Transaction History List, QR MPM.")
-    else:
-        st.markdown('<span class="badge badge-auto">DETEKSI OTOMATIS</span>', unsafe_allow_html=True)
-        st.caption("Produk ditentukan dari isi file.")
-
-with col_b:
-    uploaded_file = st.file_uploader(
-        "Pilih file UAT Script (.xlsx)",
-        type=["xlsx"],
-        help="File Excel hasil UAT. Harus memiliki sheet berisi data UAT Script.",
-    )
+    analisa = None
+    sig = None
     if uploaded_file is not None:
-        st.success(f"✅ **{uploaded_file.name}**  \n{uploaded_file.size / 1024:.1f} KB")
-
-st.info("📄 Sekali proses menghasilkan **Lampiran 7C** dan **UAT Result**, "
-        "ditambah **Lampiran 5A, 5B, 6A & 6B** untuk produk VA/FT.")
-
-# --- Pengaturan Lampiran 5A & 5B ---
-_p5 = muat_pengaturan_5()
-with st.expander("⚙️ Pengaturan Lampiran 5A & 5B (produk VA/FT)", expanded=False):
-    st.caption(
-        f"Nomor surat diambil otomatis dari **Nomor Referensi** di UAT Script. "
-        f"Tanggal pengujian = tanggal hari ini (**{lampiran5.format_tanggal_pengujian(date.today())}**)."
-    )
-    nomor_override = st.text_input(
-        "Nomor surat (kosongkan = otomatis dari UAT Script)", value="",
-        placeholder="mis. SM-26-06-003-BSS-IS",
-    )
-    k1, k2 = st.columns(2)
-    with k1:
-        jabatan_1 = st.text_input("Jabatan penandatangan 1", value=_p5["jabatan_1"])
-        nama_1 = st.text_input("Nama penandatangan 1", value=_p5["nama_1"])
-    with k2:
-        jabatan_2 = st.text_input("Jabatan penandatangan 2", value=_p5["jabatan_2"])
-        nama_2 = st.text_input("Nama penandatangan 2", value=_p5["nama_2"])
-    user_devsite = st.text_input("User pada DevSite (Lampiran 5B)", value=_p5["user_devsite"])
-
-    _semua_layanan = lampiran5.daftar_layanan()
-    if uploaded_file is not None:
-        _file_bytes_5 = uploaded_file.getvalue()
-        _default_layanan = layanan_dari_uat(_file_bytes_5)
-        _key_layanan = f"layanan5b_{uploaded_file.name}_{len(_file_bytes_5)}"
-        st.caption("Layanan API di Lampiran 5B dipilih **otomatis dari UAT Script** "
-                   "(layanan yang seluruh case-nya *Tidak dites* dianggap tidak digunakan).")
-    else:
-        _default_layanan = _semua_layanan
-        _key_layanan = "layanan5b_none"
-        st.caption("Unggah UAT Script agar Layanan API terpilih otomatis.")
-    layanan_5b = st.multiselect(
-        "Layanan API yang ditampilkan di Lampiran 5B",
-        options=_semua_layanan, default=_default_layanan, key=_key_layanan,
-    )
-    if not layanan_5b:
-        st.warning("Pilih minimal satu Layanan API.")
-
-    st.markdown("**Matriks Lampiran 5B** — centang = Ѵ (sudah sesuai), tidak dicentang = X")
-    _rows5 = lampiran5.daftar_sub_api()
-    _idx_tampil = [i for i, r in enumerate(_rows5) if r["layanan_api"] in layanan_5b]
-    matriks = st.data_editor(
-        [{"Layanan API": _rows5[i]["layanan_api"], "Sub API": _rows5[i]["sub_api"],
-          "Positif Request": True, "Positif Response": True,
-          "Negatif Request": True, "Negatif Response": True} for i in _idx_tampil],
-        disabled=["Layanan API", "Sub API"],
-        hide_index=True, use_container_width=True,
-        key="matriks_5b_" + "|".join(layanan_5b),
-    )
-    if st.button("💾 Simpan penandatangan & user sebagai default"):
-        simpan_pengaturan_5({"jabatan_1": jabatan_1, "nama_1": nama_1,
-                             "jabatan_2": jabatan_2, "nama_2": nama_2,
-                             "user_devsite": user_devsite})
-        st.success("Tersimpan. Isian ini dipakai otomatis berikutnya.")
-
-# --- Pengaturan Lampiran 6A & 6B ---
-with st.expander("⚙️ Pengaturan Lampiran 6A & 6B — Pengguna Layanan (produk VA/FT)", expanded=False):
-    st.caption("Tanggal & penandatangan 6A mengikuti *Pengaturan Lampiran 5A & 5B*. "
-               "Layanan API di 6B mengikuti pilihan Layanan API Lampiran 5B.")
-    if uploaded_file is not None:
-        _bytes_6 = uploaded_file.getvalue()
-        _key_6 = f"{uploaded_file.name}_{len(_bytes_6)}"
-        _pengguna_default = pengguna_dari_uat(_bytes_6)
-    else:
-        _key_6, _pengguna_default = "none", ""
-    pengguna_6 = st.text_input(
-        "Pengguna Layanan (nama PT mitra)", value=_pengguna_default,
-        key=f"pengguna6_{_key_6}",
-        help="Otomatis dari judul UAT Script; bisa diedit.",
-    )
-    user_devsite_6 = st.text_input(
-        "User pada Devsite mitra (Lampiran 6B)", value="",
-        key=f"user6_{_key_6}", placeholder="mis. nama@mitra.co.id",
-    )
-    st.markdown("**Matriks Lampiran 6B** — centang = Ѵ (sudah sesuai), tidak dicentang = X")
-    _rows6 = lampiran6.daftar_sub_api()
-    _idx_tampil_6 = [i for i, r in enumerate(_rows6) if r["layanan_api"] in layanan_5b]
-    matriks_6 = st.data_editor(
-        [{"Layanan API": _rows6[i]["layanan_api"], "Sub API": _rows6[i]["sub_api"],
-          "Positif Request": True, "Positif Response": True,
-          "Negatif Request": True, "Negatif Response": True} for i in _idx_tampil_6],
-        disabled=["Layanan API", "Sub API"],
-        hide_index=True, use_container_width=True,
-        key="matriks_6b_" + "|".join(layanan_5b),
-    )
-
-tanda_6b = [[True] * 4 for _ in lampiran6.daftar_sub_api()]
-for _i, _r in zip(_idx_tampil_6, matriks_6):
-    tanda_6b[_i] = [bool(_r["Positif Request"]), bool(_r["Positif Response"]),
-                    bool(_r["Negatif Request"]), bool(_r["Negatif Response"])]
-
-penandatangan_5 = {"jabatan_1": jabatan_1, "nama_1": nama_1,
-                   "jabatan_2": jabatan_2, "nama_2": nama_2}
-# Isian Ѵ/X untuk SEMUA baris template (baris yang tidak tampil = default Ѵ)
-tanda_5b = [[True] * 4 for _ in lampiran5.daftar_sub_api()]
-for _i, _r in zip(_idx_tampil, matriks):
-    tanda_5b[_i] = [bool(_r["Positif Request"]), bool(_r["Positif Response"]),
-                    bool(_r["Negatif Request"]), bool(_r["Negatif Response"])]
-
-
-# ============================================================
-# LANGKAH 2 — PROSES
-# ============================================================
-
-st.markdown(
-    '<div class="step-card"><span class="step-num">2</span>'
-    '<span class="step-title">Proses &amp; buat dokumen</span></div>',
-    unsafe_allow_html=True,
-)
-
-process_clicked = st.button(
-    "🚀 Proses & Buat Dokumen",
-    type="primary",
-    disabled=(uploaded_file is None),
-    use_container_width=True,
-)
-if uploaded_file is None:
-    st.caption("⬆️ Unggah file terlebih dahulu untuk mengaktifkan tombol proses.")
-
-# Simpan hasil di session_state agar tombol unduh tetap muncul setelah rerun
-if "lampiran_bytes" not in st.session_state:
-    st.session_state.lampiran_bytes = None
-    st.session_state.lampiran_name = None
-    st.session_state.result_docx_bytes = None
-    st.session_state.result_docx_name = None
-    st.session_state.result_stats = None
-    st.session_state.result_warnings = None
-    st.session_state.result_product = None
-    st.session_state.result_status = None
-    st.session_state.lamp5 = None
-    st.session_state.lamp6 = None
-
-if process_clicked and uploaded_file is not None:
-    try:
-        progress = st.progress(0, text="Membaca file...")
         file_bytes = uploaded_file.getvalue()
-
-        progress.progress(30, text="Membuat Lampiran 7C...")
-        (lampiran_bytes, stats, warnings, product_key,
-         lampiran_name, status_counts) = convert_uat_to_lampiran_bytes(
-            file_bytes, product=selected_product
-        )
-
-        progress.progress(70, text="Membuat UAT Result...")
-        result_bytes, _pk2, result_name = convert_uat_to_result_bytes(
-            file_bytes, product=selected_product
-        )
-        progress.progress(85, text="Membuat Lampiran 5A & 5B...")
-        lamp5 = lampiran5.convert_lampiran_5_bytes(
-            file_bytes, product_key, penandatangan_5, user_devsite,
-            tanda=tanda_5b, nomor_surat=nomor_override,
-            layanan_tampil=layanan_5b or None,
-        )
-        progress.progress(100, text="Selesai!")
-        progress.empty()
-        st.session_state.lamp5 = lamp5
-        st.session_state.lamp6 = lampiran6.convert_lampiran_6_bytes(
-            file_bytes, product_key, penandatangan_5, pengguna_6, user_devsite_6,
-            tanda=tanda_6b, layanan_tampil=layanan_5b or None,
-        )
-
-        st.session_state.lampiran_bytes = lampiran_bytes
-        st.session_state.lampiran_name = lampiran_name
-        st.session_state.result_docx_bytes = result_bytes
-        st.session_state.result_docx_name = result_name
-        st.session_state.result_stats = stats
-        st.session_state.result_warnings = warnings
-        st.session_state.result_product = product_key
-        st.session_state.result_status = status_counts
-
-        st.toast("Dokumen berhasil dibuat!", icon="🎉")
-
-        total = sum(stats.values())
-        if total == 0:
-            st.warning(
-                "File berhasil diproses, tetapi **tidak ada data hasil UAT** "
-                "yang ditemukan. Periksa kembali isi file UAT Script Anda "
-                "atau pastikan jenis produk yang dipilih sudah tepat."
-            )
+        sig = f"{uploaded_file.name}|{len(file_bytes)}|{selected_product}"
+        analisa = analisa_uat(file_bytes)
+        produk = selected_product if selected_product != "AUTO" else analisa["produk"]
+        if not analisa["ok"]:
+            st.error("File tidak dapat dibaca sebagai UAT Script. Pastikan sheet **UAT Script** ada.")
+            with st.expander("Detail teknis"):
+                st.code(analisa["error"])
         else:
-            st.success(
-                f"Berhasil! Produk **{PRODUCT_LABEL.get(product_key, product_key)}** — "
-                f"total **{total} baris** data pada Lampiran 7C. Hasil siap diunduh di bawah."
+            st.markdown(
+                '<div class="chips">'
+                + chip("Mitra", analisa["pengguna"])
+                + chip("Nomor referensi", analisa["nomor"])
+                + chip("Produk", PRODUCT_LABEL.get(produk, produk or "-"))
+                + chip("Tanggal pengujian", lampiran5.format_tanggal_pengujian(date.today()).capitalize())
+                + "</div>",
+                unsafe_allow_html=True,
             )
-    except Exception as e:  # noqa: BLE001
-        for k in ("lampiran_bytes", "result_docx_bytes", "result_stats",
-                  "result_warnings", "result_product", "result_status", "lamp5", "lamp6"):
-            st.session_state[k] = None
-        st.error(
-            "Gagal memproses file. Pastikan file yang diunggah adalah "
-            "UAT Script (.xlsx) dengan format yang benar."
-        )
-        with st.expander("Detail teknis (untuk troubleshooting)"):
-            st.code(str(e))
+            st.caption(f"📊 {analisa['jumlah_section']} section · {analisa['jumlah_case']} case terbaca "
+                       f"dari **{uploaded_file.name}**")
+    else:
+        produk = None
+
+file_ok = analisa is not None and analisa["ok"]
+lampiran_5_6 = file_ok and produk in lampiran5.PRODUK_DIDUKUNG
 
 
 # ============================================================
-# LANGKAH 3 — RINGKASAN & UNDUH
+# LANGKAH 2 — VALIDASI API & DATA MITRA
 # ============================================================
 
-if st.session_state.lampiran_bytes is not None:
-    st.markdown(
-        '<div class="step-card"><span class="step-num">3</span>'
-        '<span class="step-title">Ringkasan &amp; unduh hasil</span></div>',
-        unsafe_allow_html=True,
-    )
+sub_api_tampil = None
+tanda = None
+pengguna = ""
+user_devsite_mitra = ""
+nomor_surat = ""
 
-    used_product = st.session_state.get("result_product") or "FT_VA"
-    stats = st.session_state.result_stats or {}
-    status = st.session_state.result_status or {}
-    warns = st.session_state.get("result_warnings") or []
-
-    # Hitung total status
-    tot_pass = sum(d.get("PASS", 0) for d in status.values())
-    tot_fail = sum(d.get("NOT PASS", 0) for d in status.values())
-    tot_na = sum(d.get("N/A", 0) for d in status.values())
-    tot_all = tot_pass + tot_fail + tot_na
-
-    # --- Kartu statistik berwarna ---
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        stat_card("Total baris", tot_all, "tot")
-    with c2:
-        stat_card("PASS", tot_pass, "pass")
-    with c3:
-        stat_card("NOT PASS", tot_fail, "fail")
-    with c4:
-        stat_card("N/A", tot_na, "na")
-
-    st.write("")
-
-    # --- Tab: Unduh | Grafik | Ringkasan | Perlu dicek ---
-    tab_unduh, tab_grafik, tab_ringkasan, tab_warning = st.tabs(
-        ["⬇️ Unduh", "📊 Grafik", "📋 Ringkasan section", f"⚠️ Perlu dicek ({len(warns)})"]
-    )
-
-    with tab_unduh:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        mime_docx = (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+with st.container(border=True):
+    judul_langkah(2, "Validasi API & data mitra",
+                  "Sub API yang digunakan dideteksi otomatis dari UAT Script, untuk Lampiran 5B & 6B.")
+    if not file_ok:
+        st.info("⬆️ Unggah UAT Script terlebih dahulu.")
+    elif not lampiran_5_6:
+        st.info("ℹ️ Produk **QRIS**: Lampiran 5A/5B/6A/6B belum tersedia (daftar Sub API QRIS belum ada). "
+                "Lampiran 7C & UAT Result tetap dibuat.")
+    else:
+        validasi = analisa["validasi"]
+        n_ok = sum(v["status"] == lampiran5.STATUS_DIGUNAKAN for v in validasi)
+        n_no = sum(v["status"] == lampiran5.STATUS_TIDAK for v in validasi)
+        n_cek = sum(v["status"] == lampiran5.STATUS_CEK for v in validasi)
+        st.markdown(
+            f'<span class="pill pill-ok">✅ {n_ok} digunakan</span>'
+            f'<span class="pill pill-no">⛔ {n_no} tidak digunakan</span>'
+            + (f'<span class="pill pill-cek">⚠️ {n_cek} perlu dicek</span>' if n_cek else ""),
+            unsafe_allow_html=True,
         )
-        lamp_name = (st.session_state.get("lampiran_name") or OUTPUT_FILENAME).replace(
-            ".docx", f" {timestamp}.docx"
-        )
-        res_name = (st.session_state.get("result_docx_name") or "UAT Result.docx").replace(
-            ".docx", f" {timestamp}.docx"
-        )
-        st.write("Dokumen berhasil dibuat. Silakan unduh:")
-        dl1, dl2 = st.columns(2)
-        with dl1:
-            st.download_button(
-                "⬇️ Lampiran 7C (.docx)",
-                data=st.session_state.lampiran_bytes,
-                file_name=lamp_name, mime=mime_docx,
-                type="primary", use_container_width=True,
-            )
-            st.caption("Tabel skenario hasil uji fungsional (laporan ASPI).")
-        with dl2:
-            st.download_button(
-                "⬇️ UAT Result (.docx)",
-                data=st.session_state.result_docx_bytes,
-                file_name=res_name, mime=mime_docx,
-                type="secondary", use_container_width=True,
-            )
-            st.caption("Dokumen naratif per-case + Daftar Isi.")
+        if n_cek:
+            st.warning("Ada Sub API yang **Nama Modul**-nya tidak dikenali di UAT Script. "
+                       "Statusnya diperkirakan — mohon cek kolom *Lampirkan*.")
 
-        lamp5 = st.session_state.get("lamp5")
-        semua = [(lamp_name, st.session_state.lampiran_bytes),
-                 (res_name, st.session_state.result_docx_bytes)]
-        st.divider()
-        if lamp5:
-            if not lamp5["nomor_surat"]:
-                st.warning("⚠️ **Nomor Referensi tidak ditemukan** di UAT Script. "
-                           "Isi nomor surat manual di *Pengaturan Lampiran 5A & 5B*, lalu proses ulang.")
-            st.write(f"**Lampiran 5A & 5B** — No. `{lamp5['nomor_surat'] or '-'}` · "
-                     f"{lampiran5.format_tanggal_pengujian(lamp5['tanggal'])}")
-            st.caption("Layanan API di 5B: " + (", ".join(lamp5["layanan"]) or "-"))
-            a_name = lamp5["a_name"].replace(".docx", f" {timestamp}.docx")
-            b_name = lamp5["b_name"].replace(".docx", f" {timestamp}.docx")
-            dl3, dl4 = st.columns(2)
-            with dl3:
-                st.download_button("⬇️ Lampiran 5A (.docx)", data=lamp5["a_bytes"],
-                                   file_name=a_name, mime=mime_docx, use_container_width=True)
-                st.caption("Informasi hasil uji Developer Site.")
-            with dl4:
-                st.download_button("⬇️ Lampiran 5B (.docx)", data=lamp5["b_bytes"],
-                                   file_name=b_name, mime=mime_docx, use_container_width=True)
-                st.caption("Matriks asesmen uji Developer Site.")
-            semua += [(a_name, lamp5["a_bytes"]), (b_name, lamp5["b_bytes"])]
+        tabel = st.data_editor(
+            [{
+                "Lampirkan": v["digunakan"],
+                "Status": STATUS_LABEL[v["status"]],
+                "Layanan API": v["layanan_api"],
+                "Sub API": v["sub_api"],
+                "Bukti dari UAT": v["bukti"],
+                "Positif Req": True, "Positif Resp": True,
+                "Negatif Req": True, "Negatif Resp": True,
+            } for v in validasi],
+            column_config={
+                "Lampirkan": st.column_config.CheckboxColumn(
+                    "Lampirkan", help="Centang = Sub API dimasukkan ke Lampiran 5B & 6B", width="small"),
+                "Status": st.column_config.TextColumn("Status UAT", width="medium"),
+                "Bukti dari UAT": st.column_config.TextColumn("Bukti (no. case & status)", width="large"),
+                "Positif Req": st.column_config.CheckboxColumn("Pos Req", help="Centang = Ѵ, kosong = X", width="small"),
+                "Positif Resp": st.column_config.CheckboxColumn("Pos Resp", help="Centang = Ѵ, kosong = X", width="small"),
+                "Negatif Req": st.column_config.CheckboxColumn("Neg Req", help="Centang = Ѵ, kosong = X", width="small"),
+                "Negatif Resp": st.column_config.CheckboxColumn("Neg Resp", help="Centang = Ѵ, kosong = X", width="small"),
+            },
+            disabled=["Status", "Layanan API", "Sub API", "Bukti dari UAT"],
+            hide_index=True, use_container_width=True, key=f"validasi_{sig}",
+        )
+        st.caption("Kolom **Pos/Neg Req/Resp**: centang = **Ѵ** (sudah sesuai), kosong = **X** (belum sesuai). "
+                   "Isian ini dipakai di Lampiran 5B & 6B.")
 
-        lamp6 = st.session_state.get("lamp6")
-        if lamp6:
-            st.divider()
-            if not lamp6["pengguna"]:
-                st.warning("⚠️ Nama **Pengguna Layanan** kosong. Isi di *Pengaturan Lampiran 6A & 6B*, lalu proses ulang.")
-            if not user_devsite_6.strip():
-                st.warning("⚠️ **User pada Devsite mitra** belum diisi (kolom di Lampiran 6B akan kosong).")
-            st.write(f"**Lampiran 6A & 6B** — Pengguna Layanan: `{lamp6['pengguna'] or '-'}` · "
-                     f"{lampiran5.format_tanggal_pengujian(lamp6['tanggal'])}")
-            a6 = lamp6["a_name"].replace(".docx", f" {timestamp}.docx")
-            b6 = lamp6["b_name"].replace(".docx", f" {timestamp}.docx")
-            dl5, dl6 = st.columns(2)
-            with dl5:
-                st.download_button("⬇️ Lampiran 6A (.docx)", data=lamp6["a_bytes"],
-                                   file_name=a6, mime=mime_docx, use_container_width=True)
-                st.caption("Informasi hasil uji Developer Site Pengguna Layanan.")
-            with dl6:
-                st.download_button("⬇️ Lampiran 6B (.docx)", data=lamp6["b_bytes"],
-                                   file_name=b6, mime=mime_docx, use_container_width=True)
-                st.caption("Matriks asesmen Pengguna Layanan.")
-            semua += [(a6, lamp6["a_bytes"]), (b6, lamp6["b_bytes"])]
-        else:
-            st.caption("ℹ️ Lampiran 5A, 5B, 6A & 6B saat ini hanya untuk produk **VA/FT** "
-                       "(daftar Sub API QRIS belum tersedia).")
+        sub_api_tampil = [r["Sub API"] for r in tabel if r["Lampirkan"]]
+        tanda = [[bool(r["Positif Req"]), bool(r["Positif Resp"]),
+                  bool(r["Negatif Req"]), bool(r["Negatif Resp"])] for r in tabel]
+        if not sub_api_tampil:
+            st.warning("Belum ada Sub API yang dicentang — tabel 5B & 6B akan menampilkan **semua** Sub API.")
+            sub_api_tampil = None
+
+        st.markdown("**Data mitra**")
+        m1, m2, m3 = st.columns([3, 3, 2])
+        with m1:
+            pengguna = st.text_input("Pengguna Layanan (Lampiran 6B)", value=analisa["pengguna"],
+                                     key=f"pengguna_{sig}", help="Otomatis dari judul UAT Script; bisa diedit.")
+        with m2:
+            user_devsite_mitra = st.text_input("User Devsite mitra (Lampiran 6B) *", value="",
+                                               key=f"user6_{sig}", placeholder="nama@mitra.co.id")
+        with m3:
+            nomor_surat = st.text_input("Nomor surat (5A/5B)", value=analisa["nomor"],
+                                        key=f"nomor_{sig}", help="Otomatis dari Nomor Referensi UAT Script.")
+
+
+# ============================================================
+# LANGKAH 3 — BUAT & UNDUH
+# ============================================================
+
+if "hasil" not in st.session_state:
+    st.session_state.hasil = None
+
+with st.container(border=True):
+    judul_langkah(3, "Buat & unduh dokumen", "Satu klik membuat semua dokumen.")
+
+    if file_ok:
+        siap = [("✅", "UAT Script terbaca")]
+        if lampiran_5_6:
+            siap.append(("✅" if nomor_surat.strip() else "⚠️",
+                         "Nomor surat" + ("" if nomor_surat.strip() else " belum ada")))
+            siap.append(("✅" if user_devsite_mitra.strip() else "⚠️",
+                         "User Devsite mitra" + ("" if user_devsite_mitra.strip() else " belum diisi (6B kosong)")))
+        st.markdown(" &nbsp;·&nbsp; ".join(f"{a} {b}" for a, b in siap), unsafe_allow_html=True)
+
+    buat = st.button("🚀 Buat semua dokumen", type="primary", disabled=not file_ok,
+                     use_container_width=True)
+
+    if buat and file_ok:
+        try:
+            with st.spinner("Membuat dokumen..."):
+                (lampiran_bytes, stats, warnings, product_key,
+                 lampiran_name, status_counts) = convert_uat_to_lampiran_bytes(
+                    file_bytes, product=selected_product)
+                result_bytes, _pk, result_name = convert_uat_to_result_bytes(
+                    file_bytes, product=selected_product)
+                lamp5 = lampiran5.convert_lampiran_5_bytes(
+                    file_bytes, product_key, penandatangan, user_devsite_bank,
+                    tanda=tanda, nomor_surat=nomor_surat, sub_api_tampil=sub_api_tampil)
+                lamp6 = lampiran6.convert_lampiran_6_bytes(
+                    file_bytes, product_key, penandatangan, pengguna, user_devsite_mitra,
+                    tanda=tanda, sub_api_tampil=sub_api_tampil)
+            st.session_state.hasil = {
+                "sig": sig, "produk": product_key, "stats": stats, "warnings": warnings,
+                "status": status_counts, "lamp5": lamp5, "lamp6": lamp6,
+                "dok_utama": [(lampiran_name, lampiran_bytes), (result_name, result_bytes)],
+                "waktu": datetime.now().strftime("%Y%m%d_%H%M%S"),
+            }
+            st.toast("Dokumen berhasil dibuat!", icon="🎉")
+        except Exception as e:  # noqa: BLE001
+            st.session_state.hasil = None
+            st.error("Gagal membuat dokumen. Pastikan file adalah UAT Script (.xlsx) yang benar.")
+            with st.expander("Detail teknis"):
+                st.code(str(e))
+
+    hasil = st.session_state.hasil
+    hasil_berlaku = hasil is not None and hasil["sig"] == sig
+    if hasil is not None and not hasil_berlaku and file_ok:
+        st.info("File atau produk berubah — klik **Buat semua dokumen** lagi.")
+
+    if hasil_berlaku:
+        ts = hasil["waktu"]
+
+        def beri_waktu(nama):
+            return nama.replace(".docx", f" {ts}.docx")
+
+        (l7_name, l7_bytes), (ur_name, ur_bytes) = hasil["dok_utama"]
+        dokumen = [
+            ("📊", "Lampiran 7C", "Tabel skenario & hasil uji fungsionalitas.",
+             beri_waktu(l7_name or OUTPUT_FILENAME), l7_bytes),
+            ("📘", "UAT Result", "Dokumen naratif per-case + Daftar Isi.",
+             beri_waktu(ur_name or "UAT Result.docx"), ur_bytes),
+        ]
+        if hasil["lamp5"]:
+            l5 = hasil["lamp5"]
+            dokumen += [
+                ("📝", "Lampiran 5A", f"Informasi uji Developer Site · No. {l5['nomor_surat'] or '-'}",
+                 beri_waktu(l5["a_name"]), l5["a_bytes"]),
+                ("🗂️", "Lampiran 5B", f"Matriks asesmen Developer Site · {len(l5['sub_api'])} Sub API",
+                 beri_waktu(l5["b_name"]), l5["b_bytes"]),
+            ]
+        if hasil["lamp6"]:
+            l6 = hasil["lamp6"]
+            dokumen += [
+                ("📝", "Lampiran 6A", "Informasi uji Developer Site Pengguna Layanan.",
+                 beri_waktu(l6["a_name"]), l6["a_bytes"]),
+                ("🗂️", "Lampiran 6B", f"Matriks asesmen {l6['pengguna'] or 'Pengguna Layanan'}",
+                 beri_waktu(l6["b_name"]), l6["b_bytes"]),
+            ]
 
         zbuf = io.BytesIO()
         with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for nm, data in semua:
-                zf.writestr(nm, data)
-        st.download_button(f"📦 Unduh semua ({len(semua)} dokumen, .zip)", data=zbuf.getvalue(),
-                           file_name=f"Dokumen ASPI {timestamp}.zip", mime="application/zip",
-                           use_container_width=True)
+            for _ikon, _judul, _ket, nama, data in dokumen:
+                zf.writestr(nama, data)
+        st.success(f"✅ {len(dokumen)} dokumen siap.")
+        st.download_button(f"📦 Unduh semua ({len(dokumen)} dokumen, .zip)", data=zbuf.getvalue(),
+                           file_name=f"Dokumen ASPI {ts}.zip", mime="application/zip",
+                           type="primary", use_container_width=True)
 
-    with tab_grafik:
-        # Chart batang per section: PASS / NOT PASS / N/A
-        active = {s: d for s, d in status.items() if sum(d.values()) > 0}
-        if active:
-            st.caption("Jumlah hasil per layanan API")
-            try:
-                import pandas as pd
-                df = pd.DataFrame(
-                    {
-                        "PASS": [active[s]["PASS"] for s in active],
-                        "NOT PASS": [active[s]["NOT PASS"] for s in active],
-                        "N/A": [active[s]["N/A"] for s in active],
-                    },
-                    index=list(active.keys()),
-                )
-                st.bar_chart(
-                    df,
-                    color=["#2e9e4f", "#e24b4b", "#f0a93b"],  # urut kolom: PASS, NOT PASS, N/A
-                    use_container_width=True,
-                    height=340,
-                )
-            except Exception:
-                # Fallback sederhana bila pandas/warna tidak tersedia
-                st.bar_chart(
-                    {
-                        "PASS": [active[s]["PASS"] for s in active],
-                        "NOT PASS": [active[s]["NOT PASS"] for s in active],
-                        "N/A": [active[s]["N/A"] for s in active],
-                    },
-                    use_container_width=True, height=340,
-                )
-            # Proporsi keseluruhan
-            if tot_all:
-                st.caption(
-                    f"Proporsi: PASS {tot_pass/tot_all*100:.0f}% · "
-                    f"NOT PASS {tot_fail/tot_all*100:.0f}% · "
-                    f"N/A {tot_na/tot_all*100:.0f}%"
-                )
-        else:
-            st.caption("Tidak ada data untuk ditampilkan.")
+        for i in range(0, len(dokumen), 3):
+            cols = st.columns(3)
+            for col, (ikon, judul, ket, nama, data) in zip(cols, dokumen[i:i + 3]):
+                with col, st.container(border=True):
+                    st.markdown(f'<div class="doc-ikon">{ikon}</div><div class="doc-judul">{judul}</div>'
+                                f'<div class="doc-ket">{ket}</div>', unsafe_allow_html=True)
+                    st.download_button("⬇️ Unduh .docx", data=data, file_name=nama, mime=MIME_DOCX,
+                                       use_container_width=True, key=f"dl_{judul}")
 
-    with tab_ringkasan:
-        used_sections = PRODUCT_PROFILES[used_product]["sections"]
-        rows = []
-        for section_name, _total in used_sections:
-            sc = status.get(section_name, {})
-            terisi = stats.get(section_name, 0)
-            rows.append({
-                "Layanan API": section_name,
-                "PASS": sc.get("PASS", 0),
-                "NOT PASS": sc.get("NOT PASS", 0),
-                "N/A": sc.get("N/A", 0),
-                "Total baris": terisi,
-                "Status": "✅ Ditampilkan" if terisi > 0 else "— Tidak dites",
-            })
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        if hasil["lamp5"] and not hasil["lamp5"]["nomor_surat"]:
+            st.warning("⚠️ Nomor surat kosong di 5A/5B — isi di langkah 2 lalu buat ulang.")
+        if hasil["lamp6"] and not user_devsite_mitra.strip():
+            st.warning("⚠️ User Devsite mitra kosong — kolom di Lampiran 6B kosong.")
 
-    with tab_warning:
-        if warns:
-            st.warning(
-                f"Ditemukan **{len(warns)} hal yang perlu dicek**. "
-                "Data TIDAK diubah — parameter & value tetap apa adanya."
-            )
-            for w in warns:
-                st.markdown(f"- {w}")
-        else:
-            st.success("✅ Tidak ada data abnormal terdeteksi. Parameter & value aman.")
+        # ---------- Ringkasan hasil Lampiran 7C ----------
+        status = hasil["status"] or {}
+        stats = hasil["stats"] or {}
+        warns = hasil["warnings"] or []
+        tot_pass = sum(d.get("PASS", 0) for d in status.values())
+        tot_fail = sum(d.get("NOT PASS", 0) for d in status.values())
+        tot_na = sum(d.get("N/A", 0) for d in status.values())
+        tot_all = tot_pass + tot_fail + tot_na
+
+        st.markdown("**Ringkasan hasil uji (Lampiran 7C)**")
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            stat_card("Total baris", tot_all, "tot")
+        with k2:
+            stat_card("PASS", tot_pass, "pass")
+        with k3:
+            stat_card("NOT PASS", tot_fail, "fail")
+        with k4:
+            stat_card("N/A", tot_na, "na")
+        st.write("")
+
+        tab_cek, tab_grafik, tab_ringkas = st.tabs(
+            [f"⚠️ Perlu dicek ({len(warns)})", "📊 Grafik", "📋 Per layanan"])
+        with tab_cek:
+            if warns:
+                st.caption("Data TIDAK diubah — parameter & value tetap apa adanya. Mohon cek manual:")
+                for w in warns:
+                    st.markdown(f"- {w}")
+            else:
+                st.success("Tidak ada data abnormal terdeteksi.")
+        with tab_grafik:
+            aktif = {s: d for s, d in status.items() if sum(d.values()) > 0}
+            if aktif:
+                try:
+                    import pandas as pd
+                    df = pd.DataFrame({k: [aktif[s][k] for s in aktif] for k in ("PASS", "NOT PASS", "N/A")},
+                                      index=list(aktif.keys()))
+                    st.bar_chart(df, color=["#2e9e4f", "#e24b4b", "#f0a93b"],
+                                 use_container_width=True, height=320)
+                except Exception:  # noqa: BLE001
+                    st.bar_chart({k: [aktif[s][k] for s in aktif] for k in ("PASS", "NOT PASS", "N/A")},
+                                 use_container_width=True, height=320)
+                if tot_all:
+                    st.caption(f"PASS {tot_pass/tot_all*100:.0f}% · NOT PASS {tot_fail/tot_all*100:.0f}% · "
+                               f"N/A {tot_na/tot_all*100:.0f}%")
+            else:
+                st.caption("Tidak ada data untuk ditampilkan.")
+        with tab_ringkas:
+            baris = []
+            for section_name, _total in PRODUCT_PROFILES[hasil["produk"]]["sections"]:
+                sc = status.get(section_name, {})
+                terisi = stats.get(section_name, 0)
+                baris.append({"Layanan API": section_name, "PASS": sc.get("PASS", 0),
+                              "NOT PASS": sc.get("NOT PASS", 0), "N/A": sc.get("N/A", 0),
+                              "Total baris": terisi,
+                              "Status": "✅ Ditampilkan" if terisi > 0 else "— Tidak dites"})
+            st.dataframe(baris, use_container_width=True, hide_index=True)
+
+
+# ============================================================
+# STEPPER (status tiap langkah)
+# ============================================================
+
+def _step(n, teks, kelas):
+    tanda = "✓" if kelas == "done" else str(n)
+    return f'<div class="step {kelas}"><div class="num">{tanda}</div>{teks}</div>'
+
+
+_hasil_ok = st.session_state.hasil is not None and st.session_state.hasil.get("sig") == sig
+stepper_slot.markdown(
+    '<div class="stepper">'
+    + _step(1, "Unggah UAT Script", "done" if file_ok else "active")
+    + _step(2, "Validasi API & data mitra", "done" if _hasil_ok else ("active" if file_ok else ""))
+    + _step(3, "Unduh dokumen", "done" if _hasil_ok else "")
+    + "</div>",
+    unsafe_allow_html=True,
+)
 
 
 # ============================================================
 # FOOTER
 # ============================================================
 
-st.divider()
 with st.expander("ℹ️ Tentang aplikasi ini"):
     st.markdown(
         """
-        Aplikasi ini membaca file **UAT Script** lalu menghasilkan dokumen berikut:
+        **Dokumen yang dibuat**
+        - **Lampiran 7C** — tabel skenario hasil uji fungsional (Tidak dites → `N/A`, Remark ke Notes).
+        - **UAT Result** — semua case & section + Daftar Isi otomatis.
+        - **Lampiran 5A/5B** (VA/FT) — Developer Site Penyedia Layanan; nomor surat dari Nomor Referensi UAT.
+        - **Lampiran 6A/6B** (VA/FT) — Developer Site Pengguna Layanan; nama PT dari judul UAT.
 
-        **Lampiran 5A & 5B** (produk VA/FT; dibuat dari template resmi):
-        - Nomor surat dari **Nomor Referensi** UAT Script, tanggal = hari diproses.
-        - Penandatangan, User DevSite, dan isian Ѵ/X diatur di *Pengaturan Lampiran 5A & 5B*.
-
-        **Lampiran 6A & 6B** (produk VA/FT; Pengguna Layanan):
-        - Pengguna Layanan = nama PT dari judul UAT Script (bisa diedit).
-        - User Devsite mitra diketik di *Pengaturan Lampiran 6A & 6B*.
-
-        **Lampiran 7C** (tabel skenario hasil uji fungsional):
-        - Hanya layanan yang **benar-benar dites** yang ditampilkan.
-        - Kolom **Scenario** diambil dari kolom *Langkah Tes*.
-        - Kolom **Request** & **Response** dipisah dan diformat (Response di-*compress*).
-        - Baris **Tidak dites / Belum dites** → hasil `N/A`, Remark dipindah ke Notes.
-
-        **UAT Result** (dokumen naratif per-case):
-        - Menampilkan **semua case & semua section** + **Daftar Isi** otomatis.
-        - Log di-*compress* (URL dibiarkan, Header & body dipadatkan).
-
-        Mendukung produk **Fund Transfer / Virtual Account** dan **QRIS**
-        (deteksi otomatis atau dipilih manual).
+        **Validasi API**: Sub API dianggap *digunakan* bila ada case dengan Nama Modul yang sesuai
+        berstatus selain *Tidak dites*. Nomor case & status ditampilkan sebagai bukti.
         """
     )
-    st.caption("© Automation Lampiran 7C ASPI — Bank Sahabat Sampoerna")
+    st.caption("© Automation Dokumen ASPI — Bank Sahabat Sampoerna")
