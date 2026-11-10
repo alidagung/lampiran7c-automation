@@ -173,18 +173,25 @@ def _replace_regex(paragraph, pattern, new_text, group=0):
 
 
 def _set_cell_text(cell, text):
-    """Isi sel dengan teks, memakai format run pertama yang ada."""
-    para = cell.paragraphs[0]
-    runs = para.runs
+    """
+    Isi sel dengan teks, memakai format paragraf & run yang sudah ada.
+
+    Teks ditulis ke paragraf PERTAMA YANG BERISI teks (bila ada), lalu paragraf
+    lain dalam sel dihapus agar tidak tersisa baris kosong. Ini menangani sel
+    template yang memiliki paragraf kosong sebelum/ sesudah isinya.
+    """
+    paras = cell.paragraphs
+    target = next((p for p in paras if p.text.strip()), paras[0])
+    runs = target.runs
     if runs:
         runs[0].text = text
         for r in runs[1:]:
             r.text = ""
     else:
-        para.add_run(text)
-    for extra in cell.paragraphs[1:]:
-        for r in extra.runs:
-            r.text = ""
+        target.add_run(text)
+    for p in paras:
+        if p is not target:
+            p._p.getparent().remove(p._p)
 
 
 def _unique_cells(row):

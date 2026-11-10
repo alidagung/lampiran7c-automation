@@ -28,6 +28,7 @@ from datetime import date
 from pathlib import Path
 
 import lampiran5
+import lampiran6
 
 # Pengaturan Lampiran 5A/5B disimpan lokal (tidak ikut ke GitHub) agar tidak
 # perlu diketik ulang setiap kali.
@@ -53,6 +54,15 @@ def layanan_dari_uat(file_bytes):
         return lampiran5.layanan_digunakan(read_uat_script(io.BytesIO(file_bytes)))
     except Exception:  # noqa: BLE001 - file belum valid -> tampilkan semua
         return lampiran5.daftar_layanan()
+
+
+@st.cache_data(show_spinner=False)
+def pengguna_dari_uat(file_bytes):
+    """Nama PT mitra dari judul UAT Script (untuk Lampiran 6B)."""
+    try:
+        return lampiran6.read_nama_pengguna(io.BytesIO(file_bytes))
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def simpan_pengaturan_5(data):
@@ -272,7 +282,7 @@ with col_b:
         st.success(f"✅ **{uploaded_file.name}**  \n{uploaded_file.size / 1024:.1f} KB")
 
 st.info("📄 Sekali proses menghasilkan **Lampiran 7C** dan **UAT Result**, "
-        "ditambah **Lampiran 5A & 5B** untuk produk VA/FT.")
+        "ditambah **Lampiran 5A, 5B, 6A & 6B** untuk produk VA/FT.")
 
 # --- Pengaturan Lampiran 5A & 5B ---
 _p5 = muat_pengaturan_5()
@@ -329,6 +339,42 @@ with st.expander("⚙️ Pengaturan Lampiran 5A & 5B (produk VA/FT)", expanded=F
                              "user_devsite": user_devsite})
         st.success("Tersimpan. Isian ini dipakai otomatis berikutnya.")
 
+# --- Pengaturan Lampiran 6A & 6B ---
+with st.expander("⚙️ Pengaturan Lampiran 6A & 6B — Pengguna Layanan (produk VA/FT)", expanded=False):
+    st.caption("Tanggal & penandatangan 6A mengikuti *Pengaturan Lampiran 5A & 5B*. "
+               "Layanan API di 6B mengikuti pilihan Layanan API Lampiran 5B.")
+    if uploaded_file is not None:
+        _bytes_6 = uploaded_file.getvalue()
+        _key_6 = f"{uploaded_file.name}_{len(_bytes_6)}"
+        _pengguna_default = pengguna_dari_uat(_bytes_6)
+    else:
+        _key_6, _pengguna_default = "none", ""
+    pengguna_6 = st.text_input(
+        "Pengguna Layanan (nama PT mitra)", value=_pengguna_default,
+        key=f"pengguna6_{_key_6}",
+        help="Otomatis dari judul UAT Script; bisa diedit.",
+    )
+    user_devsite_6 = st.text_input(
+        "User pada Devsite mitra (Lampiran 6B)", value="",
+        key=f"user6_{_key_6}", placeholder="mis. nama@mitra.co.id",
+    )
+    st.markdown("**Matriks Lampiran 6B** — centang = Ѵ (sudah sesuai), tidak dicentang = X")
+    _rows6 = lampiran6.daftar_sub_api()
+    _idx_tampil_6 = [i for i, r in enumerate(_rows6) if r["layanan_api"] in layanan_5b]
+    matriks_6 = st.data_editor(
+        [{"Layanan API": _rows6[i]["layanan_api"], "Sub API": _rows6[i]["sub_api"],
+          "Positif Request": True, "Positif Response": True,
+          "Negatif Request": True, "Negatif Response": True} for i in _idx_tampil_6],
+        disabled=["Layanan API", "Sub API"],
+        hide_index=True, use_container_width=True,
+        key="matriks_6b_" + "|".join(layanan_5b),
+    )
+
+tanda_6b = [[True] * 4 for _ in lampiran6.daftar_sub_api()]
+for _i, _r in zip(_idx_tampil_6, matriks_6):
+    tanda_6b[_i] = [bool(_r["Positif Request"]), bool(_r["Positif Response"]),
+                    bool(_r["Negatif Request"]), bool(_r["Negatif Response"])]
+
 penandatangan_5 = {"jabatan_1": jabatan_1, "nama_1": nama_1,
                    "jabatan_2": jabatan_2, "nama_2": nama_2}
 # Isian Ѵ/X untuk SEMUA baris template (baris yang tidak tampil = default Ѵ)
@@ -368,6 +414,7 @@ if "lampiran_bytes" not in st.session_state:
     st.session_state.result_product = None
     st.session_state.result_status = None
     st.session_state.lamp5 = None
+    st.session_state.lamp6 = None
 
 if process_clicked and uploaded_file is not None:
     try:
@@ -393,6 +440,10 @@ if process_clicked and uploaded_file is not None:
         progress.progress(100, text="Selesai!")
         progress.empty()
         st.session_state.lamp5 = lamp5
+        st.session_state.lamp6 = lampiran6.convert_lampiran_6_bytes(
+            file_bytes, product_key, penandatangan_5, pengguna_6, user_devsite_6,
+            tanda=tanda_6b, layanan_tampil=layanan_5b or None,
+        )
 
         st.session_state.lampiran_bytes = lampiran_bytes
         st.session_state.lampiran_name = lampiran_name
@@ -419,7 +470,7 @@ if process_clicked and uploaded_file is not None:
             )
     except Exception as e:  # noqa: BLE001
         for k in ("lampiran_bytes", "result_docx_bytes", "result_stats",
-                  "result_warnings", "result_product", "result_status", "lamp5"):
+                  "result_warnings", "result_product", "result_status", "lamp5", "lamp6"):
             st.session_state[k] = None
         st.error(
             "Gagal memproses file. Pastikan file yang diunggah adalah "
@@ -522,8 +573,30 @@ if st.session_state.lampiran_bytes is not None:
                                    file_name=b_name, mime=mime_docx, use_container_width=True)
                 st.caption("Matriks asesmen uji Developer Site.")
             semua += [(a_name, lamp5["a_bytes"]), (b_name, lamp5["b_bytes"])]
+
+        lamp6 = st.session_state.get("lamp6")
+        if lamp6:
+            st.divider()
+            if not lamp6["pengguna"]:
+                st.warning("⚠️ Nama **Pengguna Layanan** kosong. Isi di *Pengaturan Lampiran 6A & 6B*, lalu proses ulang.")
+            if not user_devsite_6.strip():
+                st.warning("⚠️ **User pada Devsite mitra** belum diisi (kolom di Lampiran 6B akan kosong).")
+            st.write(f"**Lampiran 6A & 6B** — Pengguna Layanan: `{lamp6['pengguna'] or '-'}` · "
+                     f"{lampiran5.format_tanggal_pengujian(lamp6['tanggal'])}")
+            a6 = lamp6["a_name"].replace(".docx", f" {timestamp}.docx")
+            b6 = lamp6["b_name"].replace(".docx", f" {timestamp}.docx")
+            dl5, dl6 = st.columns(2)
+            with dl5:
+                st.download_button("⬇️ Lampiran 6A (.docx)", data=lamp6["a_bytes"],
+                                   file_name=a6, mime=mime_docx, use_container_width=True)
+                st.caption("Informasi hasil uji Developer Site Pengguna Layanan.")
+            with dl6:
+                st.download_button("⬇️ Lampiran 6B (.docx)", data=lamp6["b_bytes"],
+                                   file_name=b6, mime=mime_docx, use_container_width=True)
+                st.caption("Matriks asesmen Pengguna Layanan.")
+            semua += [(a6, lamp6["a_bytes"]), (b6, lamp6["b_bytes"])]
         else:
-            st.caption("ℹ️ Lampiran 5A & 5B saat ini hanya untuk produk **VA/FT** "
+            st.caption("ℹ️ Lampiran 5A, 5B, 6A & 6B saat ini hanya untuk produk **VA/FT** "
                        "(daftar Sub API QRIS belum tersedia).")
 
         zbuf = io.BytesIO()
@@ -616,6 +689,10 @@ with st.expander("ℹ️ Tentang aplikasi ini"):
         **Lampiran 5A & 5B** (produk VA/FT; dibuat dari template resmi):
         - Nomor surat dari **Nomor Referensi** UAT Script, tanggal = hari diproses.
         - Penandatangan, User DevSite, dan isian Ѵ/X diatur di *Pengaturan Lampiran 5A & 5B*.
+
+        **Lampiran 6A & 6B** (produk VA/FT; Pengguna Layanan):
+        - Pengguna Layanan = nama PT dari judul UAT Script (bisa diedit).
+        - User Devsite mitra diketik di *Pengaturan Lampiran 6A & 6B*.
 
         **Lampiran 7C** (tabel skenario hasil uji fungsional):
         - Hanya layanan yang **benar-benar dites** yang ditampilkan.
