@@ -23,6 +23,9 @@ from datetime import date
 from pathlib import Path
 
 from docx import Document
+from docx.enum.section import WD_ORIENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.table import _Cell
 from openpyxl import load_workbook
 
@@ -213,6 +216,109 @@ def _cari_paragraf(doc, pola):
 
 
 # ============================================================
+# TATA LETAK: LANDSCAPE & TABEL PRESISI (Lampiran 5B / 6B)
+# ============================================================
+
+# Margin halaman landscape (Narrow 1,27 cm, sama dengan Lampiran 7C) agar tabel
+# cukup lebar: lebar area tulis = 27,94 - 2 x 1,27 = 25,4 cm (14400 twips).
+MARGIN_LANDSCAPE_EMU = 457200   # 1,27 cm
+
+# Bobot lebar kolom grid (twips, dikonversi proporsional ke lebar area tulis).
+# Diukur dengan metrik font Calibri 11pt agar teks terpanjang muat:
+#   Sub API "API Virtual Account – Inquiry Status" 1 baris, email User DevSite
+#   tidak terpotong di tengah kata, header "Response" (bold) muat 1 baris.
+# 5B: No | Layanan API | Sub API | User DevSite | Pos Req | Pos Resp | Neg Req | Neg Resp
+BOBOT_KOLOM_5B = (567, 2240, 3473, 3720, 1100, 1100, 1100, 1100)
+
+TINGGI_HEADER_TWIPS = 454   # 0,8 cm (minimal) untuk 2 baris header
+TINGGI_DATA_TWIPS = 567     # 1,0 cm (minimal) untuk baris data
+
+
+def _set_landscape(doc, margin_emu=MARGIN_LANDSCAPE_EMU):
+    """Ubah semua section menjadi LANDSCAPE (lebar & tinggi ditukar) + margin."""
+    for s in doc.sections:
+        if s.orientation != WD_ORIENT.LANDSCAPE:
+            w, h = s.page_width, s.page_height
+            s.orientation = WD_ORIENT.LANDSCAPE
+            s.page_width, s.page_height = max(w, h), min(w, h)
+        if margin_emu is not None:
+            s.left_margin = s.right_margin = margin_emu
+            s.top_margin = s.bottom_margin = margin_emu
+
+
+def _lebar_area_twips(doc):
+    s = doc.sections[0]
+    return int(round((s.page_width - s.left_margin - s.right_margin) / 635))  # EMU -> twips
+
+
+def _atur_elemen(parent, tag, attrs, sebelum=None):
+    """Buat/ganti elemen anak `tag` pada parent dengan atribut attrs."""
+    el = parent.find(qn(tag))
+    if el is None:
+        el = OxmlElement(tag)
+        if sebelum is not None and parent.find(qn(sebelum)) is not None:
+            parent.find(qn(sebelum)).addprevious(el)
+        else:
+            parent.append(el)
+    for k, v in attrs.items():
+        el.set(qn(k), str(v))
+    return el
+
+
+def _rapikan_tabel(doc, table, bobot, baris_header=BARIS_DATA_MULAI):
+    """
+    Jadikan tabel PRESISI di halaman landscape:
+      - lebar tabel = tepat lebar area tulis (tidak keluar margin), rata tengah
+      - lebar kolom grid & sel konsisten (proporsional terhadap `bobot`)
+      - tinggi baris seragam (header & data), baris tidak terpotong antar halaman
+      - header berulang otomatis bila tabel berlanjut ke halaman berikutnya
+      - isi sel rata tengah vertikal, spasi paragraf 0
+    """
+    tbl = table._tbl
+    total = _lebar_area_twips(doc)
+    jml = sum(bobot)
+    lebar = [int(b * total / jml) for b in bobot]
+    lebar[-1] += total - sum(lebar)          # sisa pembulatan ke kolom terakhir
+
+    tblPr = tbl.tblPr
+    _atur_elemen(tblPr, "w:tblW", {"w:w": total, "w:type": "dxa"})
+    _atur_elemen(tblPr, "w:jc", {"w:val": "center"})
+    _atur_elemen(tblPr, "w:tblInd", {"w:w": 0, "w:type": "dxa"})
+    _atur_elemen(tblPr, "w:tblLayout", {"w:type": "fixed"})
+
+    grid = tbl.tblGrid
+    for gc in list(grid.findall(qn("w:gridCol"))):
+        grid.remove(gc)
+    for w in lebar:
+        gc = OxmlElement("w:gridCol")
+        gc.set(qn("w:w"), str(w))
+        grid.append(gc)
+
+    for ri, tr in enumerate(tbl.tr_lst):
+        trPr = tr.get_or_add_trPr()
+        for old in trPr.findall(qn("w:trHeight")):
+            trPr.remove(old)
+        h = TINGGI_HEADER_TWIPS if ri < baris_header else TINGGI_DATA_TWIPS
+        _atur_elemen(trPr, "w:trHeight", {"w:val": h, "w:hRule": "atLeast"})
+        _atur_elemen(trPr, "w:cantSplit", {})
+        if ri < baris_header:
+            _atur_elemen(trPr, "w:tblHeader", {})
+
+        col = 0
+        for tc in tr.tc_lst:
+            tcPr = tc.get_or_add_tcPr()
+            span_el = tcPr.find(qn("w:gridSpan"))
+            span = int(span_el.get(qn("w:val"))) if span_el is not None else 1
+            _atur_elemen(tcPr, "w:tcW", {"w:w": sum(lebar[col:col + span]), "w:type": "dxa"})
+            _atur_elemen(tcPr, "w:vAlign", {"w:val": "center"})
+            col += span
+            for p in tc.iter(qn("w:p")):
+                pPr = p.get_or_add_pPr()
+                _atur_elemen(pPr, "w:spacing",
+                             {"w:before": 0, "w:after": 0, "w:line": 240, "w:lineRule": "auto"})
+
+
+# ============================================================
 # NILAI DEFAULT (dibaca dari template)
 # ============================================================
 
@@ -349,6 +455,10 @@ def build_lampiran_5b(nomor_surat, user_devsite, tanda=None, layanan_tampil=None
     # Saring layanan (None = semua) & nomori ulang kolom No
     _saring_layanan(t, set(layanan_tampil) if layanan_tampil is not None
                     else set(daftar_layanan()))
+
+    # Halaman landscape + tabel presisi
+    _set_landscape(doc)
+    _rapikan_tabel(doc, t, BOBOT_KOLOM_5B)
     return doc
 
 

@@ -31,7 +31,7 @@ from lampiran5 import (
     LAYANAN_TSI, SUB_API_TSI, BARIS_CONTOH_TUNGGAL, BARIS_DATA_MULAI,
     format_tanggal_pengujian, layanan_digunakan, daftar_layanan as _daftar_layanan_5,
     _replace_regex, _set_cell_text, _unique_cells, _cari_paragraf, _to_bytes,
-    nama_file_aman,
+    nama_file_aman, _set_landscape, _rapikan_tabel,
 )
 
 TEMPLATE_6A = TEMPLATE_DIR / "Lampiran 6A.docx"
@@ -41,6 +41,10 @@ TEMPLATE_6B = TEMPLATE_DIR / "Lampiran 6B.docx"
 KOL_PENGGUNA = 3
 KOL_USER = 4
 KOL_TANDA = (5, 6, 7, 8)
+
+# Bobot lebar kolom grid 6B (proporsional thd lebar area tulis landscape):
+# No | Layanan API | Sub API | Pengguna Layanan | User Devsite | Pos Req | Pos Resp | Neg Req | Neg Resp
+BOBOT_KOLOM_6B = (567, 2196, 2950, 1900, 2387, 1100, 1100, 1100, 1100)
 
 
 # ============================================================
@@ -193,6 +197,10 @@ def build_lampiran_6b(pengguna_layanan, user_devsite, tanda=None, layanan_tampil
             nomor += 1
             sebelumnya = info["layanan_api"]
             _set_cell_text(_Cell(tr.tc_lst[0], t), str(nomor))
+
+    # Halaman landscape + tabel presisi
+    _set_landscape(doc)
+    _rapikan_tabel(doc, t, BOBOT_KOLOM_6B)
     return doc
 
 
