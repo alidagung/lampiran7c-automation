@@ -167,14 +167,30 @@ class TestFormatHeaderKutipGanda:
 
 
 
-class TestRequestBodySatuBaris:
-    """Lampiran 7C: Request Body & Response Body tanpa enter / spasi."""
+class TestFormatRequestResponse7C:
+    """Lampiran 7C: Request Body bersusun ke bawah, Response Body 1 baris."""
 
-    def test_request_body_compact(self):
+    REMARKS = ('URL:\nhttps://x\n\nHeaders:\nA: b\n\nRequest Body:\n{"accountNo": "1",'
+               '"amount": {"value": "10.50"}}\n\nResponse:\n{\n  "ok": true\n}')
+
+    def test_request_body_bersusun_response_satu_baris(self):
         from main import split_request_response
-        remarks = ('URL:\nhttps://x\n\nHeaders:\nA: b\n\nRequest Body:\n{\n  "accountNo": "1",\n'
-                   '  "amount": {"value": "10.50"}\n}\n\nResponse:\n{\n  "ok": true\n}')
-        req, resp = split_request_response(remarks)
+        req, resp = split_request_response(self.REMARKS)
         body = req.split("Request Body:\n", 1)[1]
-        assert body == '{"accountNo":"1","amount":{"value":"10.50"}}'
+        assert body == '{\n  "accountNo": "1",\n  "amount": {\n    "value": "10.50"\n  }\n}'
         assert resp == 'Response Body:\n{"ok":true}'
+
+    def test_putus_tengah_kata_tanpa_ubah_teks(self):
+        # Sel Request/Response: wordWrap=0 agar token panjang tidak "loncat" ke baris
+        # baru (tampak seperti enter setelah "Bearer"); teks tetap sama persis.
+        from docx import Document
+        from docx.oxml.ns import qn
+        from main import _write_cell_rich
+        doc = Document()
+        cell = doc.add_table(rows=1, cols=1).rows[0].cells[0]
+        teks = 'Header Request:\n[\n  "Authorization=Bearer ' + "A" * 90 + '"\n]'
+        _write_cell_rich(cell, teks)
+        assert "\n".join(p.text for p in cell.paragraphs) == teks
+        for p in cell.paragraphs:
+            ww = p._p.pPr.find(qn("w:wordWrap"))
+            assert ww is not None and ww.get(qn("w:val")) == "0"

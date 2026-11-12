@@ -941,7 +941,7 @@ def split_request_response(remarks_text):
     if headers_raw:
         request_blocks.append(f"Header Request:\n{_format_headers(headers_raw)}")
     if body_raw:
-        request_blocks.append(f"Request Body:\n{_compress_json(body_raw)}")
+        request_blocks.append(f"Request Body:\n{_pretty_json(body_raw)}")
 
     request_part = "\n\n".join(request_blocks).strip()
 
@@ -1098,7 +1098,7 @@ def split_request_response_qris(remarks_text):
         headers_raw = "\n".join(headers_list)
         request_blocks.append(f"Header Request:\n{_format_headers(headers_raw)}")
     if body:
-        request_blocks.append(f"Request Body:\n{_compress_json(body)}")
+        request_blocks.append(f"Request Body:\n{_pretty_json(body)}")
 
     request_part = "\n\n".join(request_blocks).strip()
 
@@ -1666,6 +1666,36 @@ def _set_cell_background(cell, hex_color):
     tcPr.append(shd)
 
 
+def _izinkan_putus_tengah_kata(paragraph):
+    """
+    Aktifkan pengaturan paragraf Word "Allow Latin text to wrap in the middle
+    of a word" (<w:wordWrap w:val="0"/>).
+
+    Tanpa ini, nilai panjang tanpa spasi (mis. token pada
+    "Authorization=Bearer <token>") dipindah utuh ke baris baru oleh Word,
+    sehingga tampak seperti ada ENTER setelah "Bearer". Dengan pengaturan ini
+    teks disambung di baris yang sama dan dipotong per karakter di tepi kolom.
+    TIDAK ada karakter yang ditambah/diubah — hanya cara Word membungkus baris.
+    """
+    pPr = paragraph._p.get_or_add_pPr()
+    el = pPr.find(qn("w:wordWrap"))
+    if el is None:
+        el = OxmlElement("w:wordWrap")
+        # urutan skema pPr: wordWrap berada sebelum spacing/ind/jc/... -> taruh
+        # sebelum elemen pertama yang posisinya setelah wordWrap, bila ada.
+        sesudah = ("w:overflowPunct", "w:topLinePunct", "w:autoSpaceDE", "w:autoSpaceDN",
+                   "w:bidi", "w:adjustRightInd", "w:snapToGrid", "w:spacing", "w:ind",
+                   "w:contextualSpacing", "w:mirrorIndents", "w:suppressOverlap", "w:jc",
+                   "w:textDirection", "w:textAlignment", "w:textboxTightWrap",
+                   "w:outlineLvl", "w:divId", "w:cnfStyle", "w:rPr", "w:sectPr", "w:pPrChange")
+        anchor = next((pPr.find(qn(t)) for t in sesudah if pPr.find(qn(t)) is not None), None)
+        if anchor is not None:
+            anchor.addprevious(el)
+        else:
+            pPr.append(el)
+    el.set(qn("w:val"), "0")
+
+
 def _write_cell_rich(cell, text):
     """
     Menulis teks ke sel, di mana LABEL tertentu (URL Endpoint:, Header Request:,
@@ -1683,6 +1713,7 @@ def _write_cell_rich(cell, text):
     for line in lines:
         p = cell.paragraphs[0] if first else cell.add_paragraph()
         first = False
+        _izinkan_putus_tengah_kata(p)
 
         matched_label = None
         for label in BOLD_LABELS:
