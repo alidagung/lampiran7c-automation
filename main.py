@@ -69,6 +69,10 @@ FOOTER_NOTES = [
 # KONFIGURASI & KONSTANTA
 # ============================================================
 
+# Logo Bank Sahabat Sampoerna (header UAT Result & aplikasi)
+LOGO_BSS = Path(__file__).resolve().parent / "assets" / "logo_bss.png"
+LOGO_BSS_LEBAR_CM = 4.5      # sesuai contoh UAT Result (4,5 x 1,63 cm)
+
 # Path konfigurasi
 INPUT_DIR = Path("input")
 OUTPUT_DIR = Path("output")
@@ -2057,6 +2061,25 @@ def _clean_case_title(langkah_tes, product_key):
     return judul
 
 
+def _pasang_logo_header(doc, logo=None, lebar_cm=LOGO_BSS_LEBAR_CM):
+    """
+    Pasang logo BSS rata kanan pada header (berlaku di semua halaman).
+    Bila file logo tidak ada, dokumen tetap dibuat tanpa logo.
+    """
+    logo = Path(logo) if logo else LOGO_BSS
+    if not logo.exists():
+        return False
+    for section in doc.sections:
+        header = section.header
+        header.is_linked_to_previous = False
+        p = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        p.add_run().add_picture(str(logo), width=Cm(lebar_cm))
+    return True
+
+
 def build_uat_result_document(uat_data, title=None, product_key="FT_VA"):
     """
     Bangun dokumen UAT Result (.docx) dari data mentah UAT Script.
@@ -2089,6 +2112,9 @@ def build_uat_result_document(uat_data, title=None, product_key="FT_VA"):
     rfonts.set(qn("w:ascii"), FONT_NAME)
     rfonts.set(qn("w:hAnsi"), FONT_NAME)
     rfonts.set(qn("w:cs"), FONT_NAME)
+
+    # Logo BSS di header kanan atas setiap halaman (seperti contoh UAT Result)
+    _pasang_logo_header(doc)
 
     # Judul dokumen
     doc_title = title or "UAT Result"

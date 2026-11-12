@@ -16,6 +16,7 @@ Cara pakai:
     streamlit run app.py
 """
 
+import base64
 import io
 import json
 import zipfile
@@ -31,7 +32,9 @@ from main import (
     read_uat_script,
     PRODUCT_PROFILES,
     OUTPUT_FILENAME,
+    LOGO_BSS,
 )
+import gabung
 import lampiran5
 import lampiran6
 import lampiran7
@@ -73,6 +76,22 @@ def muat_pengaturan():
     except Exception:  # noqa: BLE001 - file rusak -> pakai default
         pass
     return data
+
+
+@st.cache_data(show_spinner=False)
+def logo_data_uri():
+    """Logo BSS sebagai data URI (untuk HTML); "" bila file logo tidak ada."""
+    try:
+        return "data:image/png;base64," + base64.b64encode(LOGO_BSS.read_bytes()).decode()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def logo_img(tinggi_px, kelas=""):
+    uri = logo_data_uri()
+    if not uri:
+        return '<span style="font-size:1.6rem">🏦</span>'
+    return f'<img src="{uri}" class="{kelas}" style="height:{tinggi_px}px" alt="Bank Sahabat Sampoerna">'
 
 
 def simpan_pengaturan(data):
@@ -272,6 +291,41 @@ st.markdown(
         border: 2px dashed rgba(237,125,49,0.65); border-radius: 16px;
         background: linear-gradient(180deg,#FFF8F2,#FFFFFF);
     }}
+
+    /* ---------- Logo BSS ---------- */
+    .sb-logo-card {{
+        background: #FFFFFF; border-radius: 16px; padding: 12px 14px 10px 14px; text-align: center;
+        box-shadow: 0 10px 24px rgba(0,0,0,0.25); margin-bottom: 8px;
+    }}
+    .sb-logo-card img {{ max-width: 100%; }}
+    .sb-app {{ color:#FFFFFF; font-weight: 800; font-size: 0.98rem; text-align:center; margin-top: 6px; }}
+    .sb-app-sub {{ color:#AEB8CC; font-size: 0.76rem; text-align:center; }}
+    .hero-logo-card {{
+        background: #FFFFFF; border-radius: 16px; padding: 10px 16px; flex-shrink: 0; z-index: 1;
+        box-shadow: 0 10px 26px rgba(0,0,0,0.25); display:flex; align-items:center;
+    }}
+    .hero {{ background-size: 200% 200%; animation: geser 14s ease infinite; }}
+    @keyframes geser {{ 0% {{background-position: 0% 50%}} 50% {{background-position: 100% 50%}}
+                        100% {{background-position: 0% 50%}} }}
+    .hero-kanan {{ margin-left: auto; z-index: 1; text-align: right; color: #D7DEEA; font-size: 0.8rem; }}
+    .hero-kanan b {{ display:block; color:#fff; font-size: 1.5rem; line-height: 1.1; }}
+
+    /* ---------- Kartu unduh utama ---------- */
+    .unduh-kartu {{
+        border-radius: 18px; padding: 18px 20px; color:#fff; margin-bottom: 8px;
+        box-shadow: 0 12px 28px rgba(30,42,71,0.18); min-height: 150px;
+    }}
+    .unduh-lampiran {{ background: linear-gradient(135deg, {BRAND} 0%, {BRAND_DARK} 100%); }}
+    .unduh-uat {{ background: linear-gradient(135deg, {NAVY_2} 0%, {NAVY} 100%); }}
+    .unduh-kartu .ikon {{ font-size: 1.8rem; line-height: 1; }}
+    .unduh-kartu .judul {{ font-size: 1.15rem; font-weight: 800; margin-top: 6px; }}
+    .unduh-kartu .ket {{ font-size: 0.86rem; opacity: 0.92; margin-top: 2px; }}
+    .unduh-kartu .isi {{ margin-top: 8px; }}
+    .unduh-kartu .isi span {{
+        display:inline-block; padding: 2px 9px; margin: 0 4px 4px 0; border-radius: 999px;
+        background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.28);
+        font-size: 0.74rem; font-weight: 800;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -301,9 +355,9 @@ def judul_langkah(nomor, judul, sub):
 _peng = muat_pengaturan()
 with st.sidebar:
     st.markdown(
-        '<div class="sb-brand"><div class="sb-logo">📄</div><div>'
-        '<div class="sb-title">Automation Dokumen ASPI</div>'
-        '<div class="sb-sub">Bank Sahabat Sampoerna</div></div></div>',
+        f'<div class="sb-logo-card">{logo_img(52)}</div>'
+        '<div class="sb-app">Automation Dokumen ASPI</div>'
+        '<div class="sb-app-sub">UAT Script → Lampiran 5A–7C & UAT Result</div>',
         unsafe_allow_html=True,
     )
     st.divider()
@@ -342,16 +396,17 @@ penandatangan = {"jabatan_1": jabatan_1, "nama_1": nama_1,
 # ============================================================
 
 st.markdown(
-    """
+    f"""
     <div class="hero">
-        <div class="hero-logo">📄</div>
+        <div class="hero-logo-card">{logo_img(46)}</div>
         <div class="hero-teks">
             <h1>Automation Dokumen ASPI</h1>
-            <p>Unggah UAT Script, cek API yang digunakan, lalu unduh semua lampiran sekaligus.</p>
-            <span class="hero-tag">Lampiran 7C</span><span class="hero-tag">UAT Result</span>
-            <span class="hero-tag">Lampiran 5A · 5B</span><span class="hero-tag">Lampiran 6A · 6B</span><span class="hero-tag">Lampiran 7A · 7B</span>
+            <p>Unggah UAT Script, cek API yang digunakan, lalu unduh dokumen dalam hitungan detik.</p>
+            <span class="hero-tag">📚 Lampiran 5A–7C · 1 file</span>
+            <span class="hero-tag">📘 UAT Result · terpisah</span>
             <span class="hero-tag">🔒 100% lokal</span>
         </div>
+        <div class="hero-kanan"><b>{date.today().day:02d}</b>{lampiran5.NAMA_BULAN[date.today().month - 1].capitalize()} {date.today().year}</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -514,7 +569,8 @@ if "hasil" not in st.session_state:
     st.session_state.hasil = None
 
 with st.container(border=True):
-    judul_langkah(3, "Buat & unduh dokumen", "Satu klik membuat semua dokumen.")
+    judul_langkah(3, "Buat & unduh dokumen",
+                  "Satu klik: Lampiran 5A–7C digabung jadi 1 file, UAT Result terpisah.")
 
     if file_ok:
         siap = [("✅", "UAT Script terbaca")]
@@ -546,10 +602,23 @@ with st.container(border=True):
                 lamp7 = lampiran7.convert_lampiran_7_bytes(
                     file_bytes, product_key, penandatangan, pengguna,
                     tanda=tanda, sub_api_tampil=sub_api_tampil)
+                # Gabungkan Lampiran 5A ... 7C menjadi SATU file (UAT Result terpisah)
+                bagian = []
+                for lamp, (la, lb) in ((lamp5, ("5A", "5B")), (lamp6, ("6A", "6B")),
+                                       (lamp7, ("7A", "7B"))):
+                    if lamp:
+                        bagian += [(la, lamp["a_bytes"]), (lb, lamp["b_bytes"])]
+                bagian.append(("7C", lampiran_bytes))
+                gabungan_bytes = gabung.gabung_bytes([b for _l, b in bagian], [lab for lab, _b in bagian])
+                nama_pt = (pengguna or "").strip() or (analisa["pengguna"] if analisa else "")
+                rentang = bagian[0][0] if len(bagian) == 1 else f"{bagian[0][0]}-{bagian[-1][0]}"
+                gabungan_nama = (f"Lampiran ASPI {rentang}"
+                                 + (f" - {lampiran5.nama_file_aman(nama_pt)}" if nama_pt else "") + ".docx")
             st.session_state.hasil = {
                 "sig": sig, "produk": product_key, "stats": stats, "warnings": warnings,
                 "status": status_counts, "lamp5": lamp5, "lamp6": lamp6, "lamp7": lamp7,
                 "dok_utama": [(lampiran_name, lampiran_bytes), (result_name, result_bytes)],
+                "gabungan": (gabungan_nama, gabungan_bytes, [lab for lab, _b in bagian]),
                 "waktu": datetime.now().strftime("%Y%m%d_%H%M%S"),
             }
             st.toast("Dokumen berhasil dibuat!", icon="🎉")
@@ -602,23 +671,48 @@ with st.container(border=True):
                  beri_waktu(l7["b_name"]), l7["b_bytes"]),
             ]
 
-        zbuf = io.BytesIO()
-        with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for _ikon, _judul, _ket, nama, data in dokumen:
-                zf.writestr(nama, data)
-        st.success(f"✅ {len(dokumen)} dokumen siap.")
-        st.download_button(f"📦 Unduh semua ({len(dokumen)} dokumen, .zip)", data=zbuf.getvalue(),
-                           file_name=f"Dokumen ASPI {ts}.zip", mime="application/zip",
-                           type="primary", use_container_width=True)
+        g_nama, g_bytes, g_isi = hasil["gabungan"]
+        st.success("✅ Dokumen siap diunduh.")
+        u1, u2 = st.columns([3, 2])
+        with u1:
+            st.markdown(
+                '<div class="unduh-kartu unduh-lampiran"><div class="ikon">📚</div>'
+                '<div class="judul">Dokumen Lampiran ASPI</div>'
+                f'<div class="ket">{len(g_isi)} lampiran dalam 1 file Word · tiap lampiran mulai di halaman baru</div>'
+                '<div class="isi">' + "".join(f"<span>{x}</span>" for x in g_isi) + "</div></div>",
+                unsafe_allow_html=True,
+            )
+            st.download_button("⬇️ Unduh Lampiran ASPI (.docx)", data=g_bytes,
+                               file_name=beri_waktu(g_nama), mime=MIME_DOCX, type="primary",
+                               use_container_width=True, key="dl_gabungan")
+        with u2:
+            st.markdown(
+                '<div class="unduh-kartu unduh-uat"><div class="ikon">📘</div>'
+                '<div class="judul">UAT Result</div>'
+                '<div class="ket">Dokumen terpisah · semua case + Daftar Isi · logo BSS di header</div>'
+                '<div class="isi"><span>UAT Result</span></div></div>',
+                unsafe_allow_html=True,
+            )
+            st.download_button("⬇️ Unduh UAT Result (.docx)", data=ur_bytes,
+                               file_name=beri_waktu(ur_name or "UAT Result.docx"), mime=MIME_DOCX,
+                               use_container_width=True, key="dl_uat_result")
 
-        for i in range(0, len(dokumen), 3):
-            cols = st.columns(3)
-            for col, (ikon, judul, ket, nama, data) in zip(cols, dokumen[i:i + 3]):
-                with col, st.container(border=True):
-                    st.markdown(f'<div class="doc-ikon">{ikon}</div><div class="doc-judul">{judul}</div>'
-                                f'<div class="doc-ket">{ket}</div>', unsafe_allow_html=True)
-                    st.download_button("⬇️ Unduh .docx", data=data, file_name=nama, mime=MIME_DOCX,
-                                       use_container_width=True, key=f"dl_{judul}")
+        with st.expander("📂 Unduh per lampiran (opsional)"):
+            zbuf = io.BytesIO()
+            with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for _ikon, _judul, _ket, nama, data in dokumen:
+                    zf.writestr(nama, data)
+            st.download_button(f"📦 Semua file terpisah ({len(dokumen)} dokumen, .zip)", data=zbuf.getvalue(),
+                               file_name=f"Dokumen ASPI terpisah {ts}.zip", mime="application/zip",
+                               use_container_width=True)
+            for i in range(0, len(dokumen), 3):
+                cols = st.columns(3)
+                for col, (ikon, judul, ket, nama, data) in zip(cols, dokumen[i:i + 3]):
+                    with col, st.container(border=True):
+                        st.markdown(f'<div class="doc-ikon">{ikon}</div><div class="doc-judul">{judul}</div>'
+                                    f'<div class="doc-ket">{ket}</div>', unsafe_allow_html=True)
+                        st.download_button("⬇️ Unduh .docx", data=data, file_name=nama, mime=MIME_DOCX,
+                                           use_container_width=True, key=f"dl_{judul}")
 
         if hasil["lamp5"] and not hasil["lamp5"]["nomor_surat"]:
             st.warning("⚠️ Nomor surat kosong di 5A/5B — isi di langkah 2 lalu buat ulang.")
@@ -711,7 +805,9 @@ stepper_slot.markdown(
 with st.expander("ℹ️ Tentang aplikasi ini"):
     st.markdown(
         """
-        **Dokumen yang dibuat**
+        **Dokumen yang dibuat** — Lampiran 5A–7C digabung menjadi **1 file Word**
+        (tiap lampiran di halaman baru, orientasi & header asli dipertahankan);
+        **UAT Result** dibuat terpisah dengan logo BSS di header.
         - **Lampiran 7C** — tabel skenario hasil uji fungsional (Tidak dites → `N/A`, Remark ke Notes).
         - **UAT Result** — semua case & section + Daftar Isi otomatis.
         - **Lampiran 5A/5B** (VA/FT) — Developer Site Penyedia Layanan; nomor surat dari Nomor Referensi UAT.
