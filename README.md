@@ -20,7 +20,7 @@ Dengan script ini, Anda tidak perlu lagi copy-paste manual data URL, Headers, Re
 ### Alur di aplikasi
 1. **Unggah UAT Script** — nama PT mitra, nomor referensi, dan produk terbaca otomatis
 2. **Validasi API & data mitra** — cek tabel Sub API (✅ digunakan / ⛔ tidak / ⚠️ perlu dicek), isi Ѵ/X dan User Devsite mitra
-3. **Buat & unduh** — satu klik: **Lampiran 5A–7C digabung jadi 1 file Word** (tiap lampiran di halaman baru, orientasi & header asli tetap) dan **UAT Result terpisah**; file per lampiran tetap tersedia (opsional)
+3. **Buat & unduh** — satu klik **unduh semua Lampiran 5A–7C** (.zip berisi file Word terpisah per lampiran) dan tombol terpisah untuk **UAT Result**; unduh per lampiran tetap tersedia (opsional)
 
 Penandatangan & user DevSite bank diatur sekali di sidebar (**💾 Simpan pengaturan**).
 

@@ -34,7 +34,6 @@ from main import (
     OUTPUT_FILENAME,
     LOGO_BSS,
 )
-import gabung
 import lampiran5
 import lampiran6
 import lampiran7
@@ -402,7 +401,7 @@ st.markdown(
         <div class="hero-teks">
             <h1>Automation Dokumen ASPI</h1>
             <p>Unggah UAT Script, cek API yang digunakan, lalu unduh dokumen dalam hitungan detik.</p>
-            <span class="hero-tag">📚 Lampiran 5A–7C · 1 file</span>
+            <span class="hero-tag">📚 Lampiran 5A–7C · 1 klik</span>
             <span class="hero-tag">📘 UAT Result · terpisah</span>
             <span class="hero-tag">🔒 100% lokal</span>
         </div>
@@ -570,7 +569,7 @@ if "hasil" not in st.session_state:
 
 with st.container(border=True):
     judul_langkah(3, "Buat & unduh dokumen",
-                  "Satu klik: Lampiran 5A–7C digabung jadi 1 file, UAT Result terpisah.")
+                  "Satu klik unduh semua Lampiran 5A–7C (file terpisah, .zip); UAT Result terpisah.")
 
     if file_ok:
         siap = [("✅", "UAT Script terbaca")]
@@ -602,23 +601,12 @@ with st.container(border=True):
                 lamp7 = lampiran7.convert_lampiran_7_bytes(
                     file_bytes, product_key, penandatangan, pengguna,
                     tanda=tanda, sub_api_tampil=sub_api_tampil)
-                # Gabungkan Lampiran 5A ... 7C menjadi SATU file (UAT Result terpisah)
-                bagian = []
-                for lamp, (la, lb) in ((lamp5, ("5A", "5B")), (lamp6, ("6A", "6B")),
-                                       (lamp7, ("7A", "7B"))):
-                    if lamp:
-                        bagian += [(la, lamp["a_bytes"]), (lb, lamp["b_bytes"])]
-                bagian.append(("7C", lampiran_bytes))
-                gabungan_bytes = gabung.gabung_bytes([b for _l, b in bagian], [lab for lab, _b in bagian])
                 nama_pt = (pengguna or "").strip() or (analisa["pengguna"] if analisa else "")
-                rentang = bagian[0][0] if len(bagian) == 1 else f"{bagian[0][0]}-{bagian[-1][0]}"
-                gabungan_nama = (f"Lampiran ASPI {rentang}"
-                                 + (f" - {lampiran5.nama_file_aman(nama_pt)}" if nama_pt else "") + ".docx")
             st.session_state.hasil = {
                 "sig": sig, "produk": product_key, "stats": stats, "warnings": warnings,
                 "status": status_counts, "lamp5": lamp5, "lamp6": lamp6, "lamp7": lamp7,
                 "dok_utama": [(lampiran_name, lampiran_bytes), (result_name, result_bytes)],
-                "gabungan": (gabungan_nama, gabungan_bytes, [lab for lab, _b in bagian]),
+                "nama_pt": nama_pt,
                 "waktu": datetime.now().strftime("%Y%m%d_%H%M%S"),
             }
             st.toast("Dokumen berhasil dibuat!", icon="🎉")
@@ -640,51 +628,60 @@ with st.container(border=True):
             return nama.replace(".docx", f" {ts}.docx")
 
         (l7_name, l7_bytes), (ur_name, ur_bytes) = hasil["dok_utama"]
-        dokumen = [
-            ("📊", "Lampiran 7C", "Tabel skenario & hasil uji fungsionalitas.",
-             beri_waktu(l7_name or OUTPUT_FILENAME), l7_bytes),
-            ("📘", "UAT Result", "Dokumen naratif per-case + Daftar Isi.",
-             beri_waktu(ur_name or "UAT Result.docx"), ur_bytes),
-        ]
+
+        # Daftar file Lampiran (urut 5A ... 7C); UAT Result terpisah
+        lampiran = []
         if hasil["lamp5"]:
             l5 = hasil["lamp5"]
-            dokumen += [
-                ("📝", "Lampiran 5A", f"Informasi uji Developer Site · No. {l5['nomor_surat'] or '-'}",
+            lampiran += [
+                ("📝", "5A", f"Informasi uji Developer Site · No. {l5['nomor_surat'] or '-'}",
                  beri_waktu(l5["a_name"]), l5["a_bytes"]),
-                ("🗂️", "Lampiran 5B", f"Matriks asesmen Developer Site · {len(l5['sub_api'])} Sub API",
+                ("🗂️", "5B", f"Matriks asesmen Developer Site · {len(l5['sub_api'])} Sub API",
                  beri_waktu(l5["b_name"]), l5["b_bytes"]),
             ]
         if hasil["lamp6"]:
             l6 = hasil["lamp6"]
-            dokumen += [
-                ("📝", "Lampiran 6A", "Informasi uji Developer Site Pengguna Layanan.",
+            lampiran += [
+                ("📝", "6A", "Informasi uji Developer Site Pengguna Layanan.",
                  beri_waktu(l6["a_name"]), l6["a_bytes"]),
-                ("🗂️", "Lampiran 6B", f"Matriks asesmen {l6['pengguna'] or 'Pengguna Layanan'}",
+                ("🗂️", "6B", f"Matriks asesmen {l6['pengguna'] or 'Pengguna Layanan'}",
                  beri_waktu(l6["b_name"]), l6["b_bytes"]),
             ]
         if hasil.get("lamp7"):
             l7 = hasil["lamp7"]
-            dokumen += [
-                ("🧾", "Lampiran 7A", "Berita acara uji fungsionalitas.",
+            lampiran += [
+                ("🧾", "7A", "Berita acara uji fungsionalitas.",
                  beri_waktu(l7["a_name"]), l7["a_bytes"]),
-                ("✅", "Lampiran 7B", f"Matriks uji fungsionalitas · {len(l7['sub_api'])} Sub API",
+                ("✅", "7B", f"Matriks uji fungsionalitas · {len(l7['sub_api'])} Sub API",
                  beri_waktu(l7["b_name"]), l7["b_bytes"]),
             ]
+        lampiran.append(("📊", "7C", "Tabel skenario & hasil uji fungsionalitas.",
+                         beri_waktu(l7_name or OUTPUT_FILENAME), l7_bytes))
 
-        g_nama, g_bytes, g_isi = hasil["gabungan"]
+        # Satu tombol: semua file Lampiran (masing-masing file Word terpisah) dalam 1 .zip
+        kode = [x[1] for x in lampiran]
+        rentang = kode[0] if len(kode) == 1 else f"{kode[0]}-{kode[-1]}"
+        nama_pt = hasil.get("nama_pt") or ""
+        zip_nama = (f"Lampiran ASPI {rentang}"
+                    + (f" - {lampiran5.nama_file_aman(nama_pt)}" if nama_pt else "") + f" {ts}.zip")
+        zbuf = io.BytesIO()
+        with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for _ikon, _kode, _ket, nama, data in lampiran:
+                zf.writestr(nama, data)
+
         st.success("✅ Dokumen siap diunduh.")
         u1, u2 = st.columns([3, 2])
         with u1:
             st.markdown(
                 '<div class="unduh-kartu unduh-lampiran"><div class="ikon">📚</div>'
-                '<div class="judul">Dokumen Lampiran ASPI</div>'
-                f'<div class="ket">{len(g_isi)} lampiran dalam 1 file Word · tiap lampiran mulai di halaman baru</div>'
-                '<div class="isi">' + "".join(f"<span>{x}</span>" for x in g_isi) + "</div></div>",
+                '<div class="judul">Semua Lampiran ASPI</div>'
+                f'<div class="ket">{len(lampiran)} file Word terpisah · sekali klik (.zip)</div>'
+                '<div class="isi">' + "".join(f"<span>{k}</span>" for k in kode) + "</div></div>",
                 unsafe_allow_html=True,
             )
-            st.download_button("⬇️ Unduh Lampiran ASPI (.docx)", data=g_bytes,
-                               file_name=beri_waktu(g_nama), mime=MIME_DOCX, type="primary",
-                               use_container_width=True, key="dl_gabungan")
+            st.download_button(f"⬇️ Unduh semua Lampiran ({len(lampiran)} file, .zip)", data=zbuf.getvalue(),
+                               file_name=zip_nama, mime="application/zip", type="primary",
+                               use_container_width=True, key="dl_semua_lampiran")
         with u2:
             st.markdown(
                 '<div class="unduh-kartu unduh-uat"><div class="ikon">📘</div>'
@@ -698,21 +695,14 @@ with st.container(border=True):
                                use_container_width=True, key="dl_uat_result")
 
         with st.expander("📂 Unduh per lampiran (opsional)"):
-            zbuf = io.BytesIO()
-            with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as zf:
-                for _ikon, _judul, _ket, nama, data in dokumen:
-                    zf.writestr(nama, data)
-            st.download_button(f"📦 Semua file terpisah ({len(dokumen)} dokumen, .zip)", data=zbuf.getvalue(),
-                               file_name=f"Dokumen ASPI terpisah {ts}.zip", mime="application/zip",
-                               use_container_width=True)
-            for i in range(0, len(dokumen), 3):
-                cols = st.columns(3)
-                for col, (ikon, judul, ket, nama, data) in zip(cols, dokumen[i:i + 3]):
+            for i in range(0, len(lampiran), 4):
+                cols = st.columns(4)
+                for col, (ikon, kd, ket, nama, data) in zip(cols, lampiran[i:i + 4]):
                     with col, st.container(border=True):
-                        st.markdown(f'<div class="doc-ikon">{ikon}</div><div class="doc-judul">{judul}</div>'
+                        st.markdown(f'<div class="doc-ikon">{ikon}</div><div class="doc-judul">Lampiran {kd}</div>'
                                     f'<div class="doc-ket">{ket}</div>', unsafe_allow_html=True)
                         st.download_button("⬇️ Unduh .docx", data=data, file_name=nama, mime=MIME_DOCX,
-                                           use_container_width=True, key=f"dl_{judul}")
+                                           use_container_width=True, key=f"dl_{kd}")
 
         if hasil["lamp5"] and not hasil["lamp5"]["nomor_surat"]:
             st.warning("⚠️ Nomor surat kosong di 5A/5B — isi di langkah 2 lalu buat ulang.")
@@ -805,9 +795,8 @@ stepper_slot.markdown(
 with st.expander("ℹ️ Tentang aplikasi ini"):
     st.markdown(
         """
-        **Dokumen yang dibuat** — Lampiran 5A–7C digabung menjadi **1 file Word**
-        (tiap lampiran di halaman baru, orientasi & header asli dipertahankan);
-        **UAT Result** dibuat terpisah dengan logo BSS di header.
+        **Dokumen yang dibuat** — semua Lampiran 5A–7C diunduh **sekali klik** (.zip berisi
+        file Word terpisah per lampiran); **UAT Result** diunduh terpisah (logo BSS di header).
         - **Lampiran 7C** — tabel skenario hasil uji fungsional (Tidak dites → `N/A`, Remark ke Notes).
         - **UAT Result** — semua case & section + Daftar Isi otomatis.
         - **Lampiran 5A/5B** (VA/FT) — Developer Site Penyedia Layanan; nomor surat dari Nomor Referensi UAT.

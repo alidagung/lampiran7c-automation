@@ -164,3 +164,17 @@ class TestFormatHeaderKutipGanda:
         out = _format_headers(h)
         assert '""' not in out
         assert "Authorization=%s" % self.TOKEN in out
+
+
+
+class TestRequestBodySatuBaris:
+    """Lampiran 7C: Request Body & Response Body tanpa enter / spasi."""
+
+    def test_request_body_compact(self):
+        from main import split_request_response
+        remarks = ('URL:\nhttps://x\n\nHeaders:\nA: b\n\nRequest Body:\n{\n  "accountNo": "1",\n'
+                   '  "amount": {"value": "10.50"}\n}\n\nResponse:\n{\n  "ok": true\n}')
+        req, resp = split_request_response(remarks)
+        body = req.split("Request Body:\n", 1)[1]
+        assert body == '{"accountNo":"1","amount":{"value":"10.50"}}'
+        assert resp == 'Response Body:\n{"ok":true}'

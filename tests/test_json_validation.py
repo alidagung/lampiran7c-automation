@@ -19,10 +19,17 @@ class TestIsiJsonTidakBerubah:
         assert _compress_json(t) == '{"a":10.50,"b":"x   y","e":1E5,"c":[],"d":{}}'
         assert "10.50" in _pretty_json(t) and "1E5" in _pretty_json(t)
 
-    def test_json_rusak_dikembalikan_persis_seperti_sumber(self):
+    def test_json_rusak_dirapatkan_tanpa_ubah_isi(self):
         rusak = '{\n  "a": 1\n  "b": 2\n}'   # kurang koma
-        assert _compress_json(rusak) == rusak
+        assert _compress_json(rusak) == '{"a":1 "b":2}'      # enter hilang, isi tetap
         assert _pretty_json(rusak) == rusak
+
+    def test_json_rusak_isi_string_tidak_disentuh(self):
+        rusak = '{ "a": "x   y",\n "b" : 1 } {"c":2}'
+        assert _compress_json(rusak) == '{"a":"x   y","b":1}{"c":2}'
+
+    def test_bukan_json_dibiarkan(self):
+        assert _compress_json("Tidak ada\nresponse") == "Tidak ada\nresponse"
 
     def test_enter_dalam_string_tidak_dianggap_error(self):
         assert _is_valid_json('{"a": "baris1\nbaris2"}')

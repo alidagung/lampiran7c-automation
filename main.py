@@ -805,12 +805,52 @@ def _pretty_json(raw):
     return "".join(out)
 
 
+def _rapatkan_json_rusak(raw):
+    """
+    Rapatkan teks berbentuk JSON yang TIDAK valid menjadi satu baris tanpa
+    mengubah isi: hanya spasi/enter DI LUAR teks berkutip yang diatur.
+      - spasi/enter yang menempel pada { } [ ] , :  -> dibuang
+      - spasi/enter di antara dua kata biasa       -> jadi satu spasi
+    Isi di dalam tanda kutip (termasuk spasi/enter di dalamnya) tidak disentuh.
+    """
+    struktur = "{}[],:"
+    out = []
+    i, n = 0, len(raw)
+    while i < n:
+        ch = raw[i]
+        if ch == '"':
+            j = i + 1
+            while j < n:
+                if raw[j] == "\\":
+                    j += 2
+                    continue
+                if raw[j] == '"':
+                    break
+                j += 1
+            out.append(raw[i:j + 1])
+            i = j + 1
+        elif ch.isspace():
+            j = i
+            while j < n and raw[j].isspace():
+                j += 1
+            sebelum = out[-1][-1] if out and out[-1] else ""
+            sesudah = raw[j] if j < n else ""
+            if sebelum and sesudah and sebelum not in struktur and sesudah not in struktur:
+                out.append(" ")
+            i = j
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out).strip()
+
+
 def _compress_json(raw):
     """
     Compress JSON menjadi satu baris tanpa mengubah isi (token persis seperti
     sumber; hanya spasi/enter di luar string yang dibuang).
-    Jika bukan JSON valid, kembalikan teks ASLI apa adanya: spasi & enter
-    TIDAK diubah (sama seperti hasil test), notifikasi tetap diberikan terpisah.
+    Bila JSON tidak valid tetapi berbentuk JSON (diawali '{' / '['), teks tetap
+    dirapatkan jadi satu baris secara aman (lihat _rapatkan_json_rusak) dan
+    notifikasi tetap diberikan terpisah. Teks bukan JSON dibiarkan apa adanya.
     """
     raw = raw.strip()
     if not raw:
@@ -818,6 +858,8 @@ def _compress_json(raw):
     try:
         _json_loads_toleran(raw)
     except (ValueError, TypeError):
+        if raw[:1] in ("{", "["):
+            return _rapatkan_json_rusak(raw)
         return raw
     return "".join(_json_tokens(raw))
 
@@ -899,7 +941,7 @@ def split_request_response(remarks_text):
     if headers_raw:
         request_blocks.append(f"Header Request:\n{_format_headers(headers_raw)}")
     if body_raw:
-        request_blocks.append(f"Request Body:\n{_pretty_json(body_raw)}")
+        request_blocks.append(f"Request Body:\n{_compress_json(body_raw)}")
 
     request_part = "\n\n".join(request_blocks).strip()
 
@@ -1056,7 +1098,7 @@ def split_request_response_qris(remarks_text):
         headers_raw = "\n".join(headers_list)
         request_blocks.append(f"Header Request:\n{_format_headers(headers_raw)}")
     if body:
-        request_blocks.append(f"Request Body:\n{_pretty_json(body)}")
+        request_blocks.append(f"Request Body:\n{_compress_json(body)}")
 
     request_part = "\n\n".join(request_blocks).strip()
 

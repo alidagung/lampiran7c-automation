@@ -36,7 +36,7 @@ class TestFormatTabelHeader:
         req, resp = split_request_response(REMARKS)
         assert "URL Endpoint:\nhttps://ob-sandbox.banksampoerna.co.id/snap/v1.2/balance-inquiry" in req
         body = req.split("Request Body:")[1]
-        assert '"accountNo": "1023653296"' in body and "POST" not in body
+        assert '{"accountNo":"1023653296"}' in body and "POST" not in body   # 1 baris, tanpa spasi
         assert resp == 'Response Body:\n{"responseCode":"4011101"}'
 
     def test_tidak_ada_peringatan_palsu(self):
