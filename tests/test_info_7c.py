@@ -173,3 +173,58 @@ class TestVariasiStatus:
         assert r["request"] == "" and r["response"] == ""
         assert r["notes"] == "Tidak dites karena Mitra tidak menggunakan X"
         assert r["result"] == "N/A"
+
+
+class TestReferensiVeloka:
+    """Remarks kosong -> Notes diambil dari referensi UAT Script Veloka."""
+
+    REF = {"section": {"Transfer VA": {
+        "alasan_api": "Tidak di test karena mitra tidak menggunakan Transfer Virtual Account",
+        "kasus": [
+            {"no": "7.1", "langkah": "Access Token Invalid",
+             "remarks": "Tidak di test karena mitra tidak menggunakan Transfer Virtual Account"},
+            {"no": "7.2", "langkah": "Unauthorized . Signature", "remarks": ""},
+            {"no": "7.11", "langkah": "Input no Virtual Account tidak terdaftar",
+             "remarks": "Tidak ditest karena sudah ada validasi saat inquiry"},
+        ]}}}
+
+    def _row(self, no, langkah):
+        return {"nomor_kasus_tes": no, "langkah_tes": langkah}
+
+    def test_remarks_kasus_yang_cocok(self):
+        r = self._row("7.11", "Input no Virtual Account tidak terdaftar")
+        assert m.notes_dari_referensi("Transfer VA", r, False, self.REF) == \
+            "Tidak ditest karena sudah ada validasi saat inquiry"
+
+    def test_alasan_api_hanya_bila_semua_case_tidak_dites(self):
+        r = self._row("7.2", "Unauthorized . Signature")
+        assert m.notes_dari_referensi("Transfer VA", r, True, self.REF).startswith("Tidak di test karena mitra")
+        assert m.notes_dari_referensi("Transfer VA", r, False, self.REF) == ""
+        r1 = self._row("7.1", "Access Token Invalid")
+        assert m.notes_dari_referensi("Transfer VA", r1, False, self.REF) == ""
+
+    def test_judul_skenario_beda_tidak_dipakai(self):
+        r = self._row("7.11", "Skenario lain sama sekali")
+        assert m.notes_dari_referensi("Transfer VA", r, True, self.REF) == ""
+
+    def test_nomor_di_depan_judul_diabaikan(self):
+        r = self._row("7.11", "18,9 Input no Virtual Account tidak terdaftar")
+        assert m.notes_dari_referensi("Transfer VA", r, False, self.REF) != ""
+
+    def test_file_referensi_ada_dan_dipakai(self):
+        assert m.REFERENSI_NOTES.exists()
+        rows = [{"nomor_kasus_tes": "7.%d" % i, "langkah_tes": l, "hasil_aktual": "Tidak dites",
+                 "hasil_diharapkan": "", "nama_modul": "Inquiry", "remarks": ""}
+                for i, l in [(1, "Access Token Invalid"), (11, "Input no Virtual Account tidak terdaftar")]]
+        data, w = m.map_uat_to_lampiran({"Transfer VA": rows}, collect_warnings=True,
+                                        profile=m.PRODUCT_PROFILES["FT_VA"])
+        notes = [r["notes"] for rows_ in data.values() for r in rows_ if r]
+        assert all(notes) and len(notes) == 2
+        assert any("referensi UAT Script Veloka" in x for x in w)
+
+    def test_bisa_dimatikan(self):
+        rows = [{"nomor_kasus_tes": "7.11", "langkah_tes": "Input no Virtual Account tidak terdaftar",
+                 "hasil_aktual": "Tidak dites", "hasil_diharapkan": "", "nama_modul": "Inquiry", "remarks": ""}]
+        data = m.map_uat_to_lampiran({"Transfer VA": rows}, profile=m.PRODUCT_PROFILES["FT_VA"],
+                                     pakai_referensi_notes=False)
+        assert [r["notes"] for rs in data.values() for r in rs if r] == [""]

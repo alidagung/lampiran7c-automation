@@ -762,6 +762,74 @@ def _alasan_level_api(rows):
     return remarks
 
 
+# Referensi Notes dari UAT Script acuan (Veloka / PT Integrasi Sinaptiq), dibuat
+# oleh buat_referensi_notes.py. Dipakai untuk case tidak dites yang Remarks-nya
+# kosong di UAT Script mitra.
+REFERENSI_NOTES = Path(__file__).resolve().parent / "referensi" / "notes_veloka.json"
+_cache_referensi = {}
+
+
+def _muat_referensi_notes(path=None):
+    path = Path(path or REFERENSI_NOTES)
+    if path not in _cache_referensi:
+        try:
+            _cache_referensi[path] = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _cache_referensi[path] = {}
+    return _cache_referensi[path]
+
+
+def _norm_langkah(teks):
+    """'3,1 Access Token Invalid' -> 'access token invalid' (buang nomor di depan)."""
+    s = str(teks or "").replace("\xa0", " ").lower()
+    s = re.sub(r"^\s*\d+\s*[,.]\s*\d+\s*", "", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _cari_kasus_referensi(kasus_ref, row):
+    """Kasus referensi yang cocok: nomor sama + judul skenario mirip; bila tidak,
+    judul skenario sama persis. None bila tidak ada yang cocok."""
+    import difflib
+    langkah = _norm_langkah(row.get("langkah_tes", ""))
+    nomor = str(row.get("nomor_kasus_tes", "")).strip()
+    if not langkah:
+        return None
+    for k in kasus_ref:
+        if str(k.get("no", "")).strip() == nomor:
+            if difflib.SequenceMatcher(None, _norm_langkah(k.get("langkah")), langkah).ratio() >= 0.85:
+                return k
+            break
+    for k in kasus_ref:
+        if _norm_langkah(k.get("langkah")) == langkah:
+            return k
+    return None
+
+
+def notes_dari_referensi(section, row, semua_na, referensi=None):
+    """
+    Notes untuk case tidak dites yang Remarks-nya kosong, diambil dari UAT
+    Script acuan (Veloka). Teks disalin apa adanya.
+      - Remarks case yang cocok di acuan (selain alasan level API);
+      - alasan level API acuan ("Mitra tidak menggunakan ...") HANYA bila
+        semua case API ini di UAT Script mitra memang tidak dites.
+    Mengembalikan "" bila tidak ada referensi yang cocok.
+    """
+    ref = referensi if referensi is not None else _muat_referensi_notes()
+    sec = (ref.get("section") or {}).get(section)
+    if not sec:
+        return ""
+    alasan_api = str(sec.get("alasan_api") or "").strip()
+    k = _cari_kasus_referensi(sec.get("kasus") or [], row)
+    if k is None:
+        return ""
+    teks = str(k.get("remarks") or "").strip()
+    if teks and teks != alasan_api:
+        return teks
+    if semua_na and alasan_api:
+        return alasan_api
+    return ""
+
+
 def _format_headers(headers_raw):
     """
     Format blok Headers dari UAT Script ke format array Lampiran 7C.
@@ -1568,7 +1636,8 @@ def _iter_header_items(headers_raw):
     return items
 
 
-def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
+def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None,
+                        pakai_referensi_notes=True):
     """
     Map data dari UAT Script ke struktur Lampiran 7C.
 
@@ -1617,6 +1686,7 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
     # terisi -> prefix Lampiran 7C bisa dihitung akurat, lalu peringatan dibuat
     # dengan nomor kasus SESUAI penomoran dokumen (mis. VA -> 6.x).
     pending_anomaly_checks = []
+    pending_notes_ref = []      # case yang Notes-nya diambil dari referensi Veloka
 
     # Proses mapping berdasarkan urutan prioritas
     for uat_section, _, target_section, fill_empty_only in mapping_def:
@@ -1638,6 +1708,8 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
         # ini dipakai sebagai Notes case lain di API yang sama yang Remarks-nya
         # kosong (teks disalin apa adanya dari UAT Script).
         alasan_api = _alasan_level_api(rows)
+        # Semua case API ini tidak dites? (syarat memakai alasan level API acuan)
+        semua_na = bool(rows) and all(status_tidak_dites(r.get('hasil_aktual')) for r in rows)
 
         for row_data in rows:
             sub_num = extract_sub_number(row_data['nomor_kasus_tes'])
@@ -1694,8 +1766,17 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
                 # dan Response (isi setelah penanda "Response:")
                 request_content, response_content = split_request_response(remarks_text)
 
+            # Masih kosong & N/A -> ambil Notes dari referensi UAT Script Veloka.
+            notes_ref = False
+            if (result_value == "N/A" and not notes and not request_content
+                    and not response_content and pakai_referensi_notes):
+                notes = notes_dari_referensi(uat_section, row_data, semua_na)
+                notes_ref = bool(notes)
+
             # Tunda pemeriksaan anomali sampai penomoran final diketahui.
             pending_anomaly_checks.append((target_section, sub_num, row_data))
+            if notes_ref:
+                pending_notes_ref.append((target_section, sub_num, row_data))
 
             lampiran_data[target_section][row_idx] = {
                 'no': sub_num,
@@ -1745,6 +1826,18 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
         if terisi and terisi.get("notes"):
             w = [x for x in w if "Remarks kosong (tidak ada alasan)" not in x]
         warnings.extend(w)
+
+    # Satu notifikasi ringkas: Notes yang diisi dari referensi UAT Script Veloka.
+    nomor_ref = []
+    for target_section, sub_num, row_data in pending_notes_ref:
+        section_prefix = section_prefix_map.get(target_section)
+        if section_prefix is None:
+            continue
+        nomor_ref.append(f"{section_prefix}.{sub_num}" if renumber else row_data['nomor_kasus_tes'])
+    if nomor_ref:
+        warnings.append(
+            f"Notes {len(nomor_ref)} case tidak dites diisi dari referensi UAT Script Veloka "
+            f"(Remarks di UAT Script ini kosong) — mohon dicek: kasus {', '.join(nomor_ref)}.")
 
     if collect_warnings:
         return lampiran_data, warnings

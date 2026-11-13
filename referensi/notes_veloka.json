@@ -1,0 +1,715 @@
+{
+ "sumber": "UAT Script Penambahan layanan Virtual Account Fund Transfer-SNAP Mitra PT Integrasi Sinaptiq (SM-26-06-003-BSS-IS).xlsx",
+ "section": {
+  "Balance Services": {
+   "alasan_api": "Tidak dites karena Mitra tidak menggunakan Balance Services",
+   "kasus": [
+    {
+     "no": "1.1",
+     "langkah": "Access Token Invalid",
+     "remarks": "Tidak dites karena Mitra tidak menggunakan Balance Services"
+    },
+    {
+     "no": "1.2",
+     "langkah": "Unauthorized . Signature",
+     "remarks": ""
+    },
+    {
+     "no": "1.3",
+     "langkah": "Missing Mandatory Field {} …, etc",
+     "remarks": ""
+    },
+    {
+     "no": "1.4",
+     "langkah": "Invalid Field Format {} .., etc",
+     "remarks": ""
+    },
+    {
+     "no": "1.5",
+     "langkah": "Cannot use the same X-EXTERNAL-ID",
+     "remarks": ""
+    },
+    {
+     "no": "1.6",
+     "langkah": "Inquiry Saldo Utama (IDR and/or USD, etc) (termasuk saldo lainnya)",
+     "remarks": ""
+    },
+    {
+     "no": "1.7",
+     "langkah": "Inquiry Saldo lebih dari 1 \"balanceType\"\n\nDi dalam field \"accountInfos\" terdapat lebih dari 1 object dengan \"balanceType\" yang berbeda",
+     "remarks": "Tidak dites karena Mitra hanya menggunakan 1 account"
+    },
+    {
+     "no": "1.8",
+     "langkah": "Inquiry Saldo account yang sudah tutup/tidak aktif",
+     "remarks": "Tidak dites karena igate tidak ada validasi sehingga akan tetap muncul balance dari account tersebut"
+    },
+    {
+     "no": "1.9",
+     "langkah": "Invalid Access Token Scope",
+     "remarks": "Tidak dites karena hanya menggunakan token B2B"
+    },
+    {
+     "no": "1.10",
+     "langkah": "Account Frozen/Abnormal",
+     "remarks": "Tidak dites karena hanya menggunakan token B2B"
+    },
+    {
+     "no": "1.11",
+     "langkah": "B2B2C Access Token Invalid",
+     "remarks": "Tidak dites karena hanya menggunakan token B2B"
+    }
+   ]
+  },
+  "Intrabank Transfer": {
+   "alasan_api": "Tidak dites karena Mitra tidak menggunakan Intrabank Transfer",
+   "kasus": [
+    {
+     "no": "2.1",
+     "langkah": "Access Token Invalid",
+     "remarks": "Tidak dites karena Mitra tidak menggunakan Intrabank Transfer"
+    },
+    {
+     "no": "2.2",
+     "langkah": "Unauthorized . Signature",
+     "remarks": ""
+    },
+    {
+     "no": "2.3",
+     "langkah": "Missing Mandatory Field {} …, etc",
+     "remarks": ""
+    },
+    {
+     "no": "2.4",
+     "langkah": "Invalid Field Format {} .., etc",
+     "remarks": ""
+    },
+    {
+     "no": "2.5",
+     "langkah": "Cannot use the same X-EXTERNAL-ID",
+     "remarks": ""
+    },
+    {
+     "no": "2.6",
+     "langkah": "Inquiry Account IDR",
+     "remarks": "Tidak dites karena hanya mengakomodasi IDR"
+    },
+    {
+     "no": "2.7",
+     "langkah": "Inquiry Account USD",
+     "remarks": "Tidak dites karena igate tidak ada validasi sehingga akan tetap muncul balance dari account tersebut"
+    },
+    {
+     "no": "2.8",
+     "langkah": "Inquiry account yang sudah tutup/tidak aktif",
+     "remarks": ""
+    },
+    {
+     "no": "2.9",
+     "langkah": "Transfer IDR to IDR",
+     "remarks": ""
+    },
+    {
+     "no": "2.10",
+     "langkah": "Insufficient Fund/Saldo tidak cukup",
+     "remarks": ""
+    },
+    {
+     "no": "2.11",
+     "langkah": "Duplicate Customer Reference Number",
+     "remarks": ""
+    },
+    {
+     "no": "2.12",
+     "langkah": "Inquiry Status atas transaksi Intrabank Transfer berhasil\n\nField \"serviceCode\" diisi dengan value \"17\"\nField \"latestTransactionStatus\" diisi dengan value \"00\"",
+     "remarks": ""
+    }
+   ]
+  },
+  "Interbank Transfer": {
+   "alasan_api": "Tidak di test karena mitra tidak menggunakan Interbank Transfer",
+   "kasus": [
+    {
+     "no": "3.1",
+     "langkah": "Access Token Invalid",
+     "remarks": "Tidak di test karena mitra tidak menggunakan Interbank Transfer"
+    },
+    {
+     "no": "3.2",
+     "langkah": "Unauthorized . Signature",
+     "remarks": ""
+    },
+    {
+     "no": "3.3",
+     "langkah": "Missing Mandatory Field {} …, etc",
+     "remarks": ""
+    },
+    {
+     "no": "3.4",
+     "langkah": "Invalid Field Format {} .., etc",
+     "remarks": ""
+    },
+    {
+     "no": "3.5",
+     "langkah": "Cannot use the same X-EXTERNAL-ID",
+     "remarks": ""
+    },
+    {
+     "no": "3.6",
+     "langkah": "Inquiry Account via Switching X, with SWIFT code",
+     "remarks": "Tidak dites karena BSS menggunakan bank code"
+    },
+    {
+     "no": "3.7",
+     "langkah": "Inquiry Account via Switching X, with bank code",
+     "remarks": ""
+    },
+    {
+     "no": "3.8",
+     "langkah": "Inquiry account yang sudah tutup/tidak aktif",
+     "remarks": "Tidak dites karena di igate tidak ada validasi sehingga akan tetap muncul balance dari account tersebut"
+    },
+    {
+     "no": "3.9",
+     "langkah": "Transfer to Account via Switching X, with SWIFT code",
+     "remarks": "Tidak dites karena BSS menggunakan bank code"
+    },
+    {
+     "no": "3.10",
+     "langkah": "Transfer to Account via Switching X, with bank code",
+     "remarks": ""
+    },
+    {
+     "no": "3.11",
+     "langkah": "Insufficient Fund/Saldo tidak cukup",
+     "remarks": ""
+    },
+    {
+     "no": "3.12",
+     "langkah": "Duplicate Customer Reference Number",
+     "remarks": ""
+    },
+    {
+     "no": "3.13",
+     "langkah": "Inquiry Status atas transaksi Interbank Transfer berhasil\n\nField \"serviceCode\" diisi dengan value \"18\"\nField \"latestTransactionStatus\" diisi dengan value \"00\"",
+     "remarks": ""
+    }
+   ]
+  },
+  "Interbank Transfer via BI FAST": {
+   "alasan_api": "Tidak di test karena mitra tidak menggunakan Interbank Transfer",
+   "kasus": [
+    {
+     "no": "4.1",
+     "langkah": "Access Token Invalid",
+     "remarks": "Tidak di test karena mitra tidak menggunakan Interbank Transfer"
+    },
+    {
+     "no": "4.2",
+     "langkah": "Unauthorized . Signature",
+     "remarks": ""
+    },
+    {
+     "no": "4.3",
+     "langkah": "Missing Mandatory Field {} …, etc",
+     "remarks": ""
+    },
+    {
+     "no": "4.4",
+     "langkah": "Invalid Field Format {} .., etc",
+     "remarks": ""
+    },
+    {
+     "no": "4.5",
+     "langkah": "Cannot use the same X-EXTERNAL-ID",
+     "remarks": ""
+    },
+    {
+     "no": "4.6",
+     "langkah": "Inquiry Account via Switching X, with SWIFT code",
+     "remarks": ""
+    },
+    {
+     "no": "4.7",
+     "langkah": "Inquiry Account via Switching X, with bank code",
+     "remarks": "Tidak dites karena bifast menggunakan swift code"
+    },
+    {
+     "no": "4.8",
+     "langkah": "Inquiry account yang sudah tutup/tidak aktif",
+     "remarks": "Tidak dites karena di igate tidak ada validasi sehingga akan tetap muncul balance dari account tersebut"
+    },
+    {
+     "no": "4.9",
+     "langkah": "Transfer to Account via Switching X, with SWIFT code",
+     "remarks": ""
+    },
+    {
+     "no": "4.10",
+     "langkah": "Transfer to Account via Switching X, with bank code",
+     "remarks": "Tidak dites karena bifast menggunakan swift code"
+    },
+    {
+     "no": "4.11",
+     "langkah": "Insufficient Fund/Saldo tidak cukup",
+     "remarks": ""
+    },
+    {
+     "no": "4.12",
+     "langkah": "Duplicate Customer Reference Number",
+     "remarks": ""
+    },
+    {
+     "no": "4.13",
+     "langkah": "Inquiry Status atas transaksi Interbank Transfer berhasil\n\nField \"serviceCode\" diisi dengan value \"18\"\nField \"latestTransactionStatus\" diisi dengan value \"00\"",
+     "remarks": ""
+    }
+   ]
+  },
+  "RTGS Transfer": {
+   "alasan_api": "Tidak di test karena mitra tidak menggunakan RTGS Transfer",
+   "kasus": [
+    {
+     "no": "5.1",
+     "langkah": "Access Token Invalid",
+     "remarks": "Tidak di test karena mitra tidak menggunakan RTGS Transfer"
+    },
+    {
+     "no": "5.2",
+     "langkah": "Unauthorized . Signature",
+     "remarks": ""
+    },
+    {
+     "no": "5.3",
+     "langkah": "Missing Mandatory Field {} …, etc",
+     "remarks": ""
+    },
+    {
+     "no": "5.4",
+     "langkah": "Invalid Field Format {} .., etc",
+     "remarks": ""
+    },
+    {
+     "no": "5.5",
+     "langkah": "Cannot use the same X-EXTERNAL-ID",
+     "remarks": ""
+    },
+    {
+     "no": "5.6",
+     "langkah": "Inquiry Account via Switching X, with SWIFT code",
+     "remarks": "Tidak dites karena hanya menggunakan bank code."
+    },
+    {
+     "no": "5.7",
+     "langkah": "Inquiry Account via Switching X, with bank code",
+     "remarks": ""
+    },
+    {
+     "no": "5.8",
+     "langkah": "Inquiry account yang sudah tutup/tidak aktif",
+     "remarks": "Tidak dites karena igate tidak ada validasi sehingga akan tetap muncul balance dari account tersebut."
+    },
+    {
+     "no": "5.9",
+     "langkah": "Transfer to Account via RTGS, with SWIFT code",
+     "remarks": "Tidak dites karena hanya menggunakan bank code."
+    },
+    {
+     "no": "5.10",
+     "langkah": "Transfer to Account via RTGS, with bank code",
+     "remarks": ""
+    },
+    {
+     "no": "5.11",
+     "langkah": "Insufficient Fund/Saldo tidak cukup",
+     "remarks": ""
+    },
+    {
+     "no": "5.12",
+     "langkah": "Duplicate Customer Reference Number",
+     "remarks": ""
+    },
+    {
+     "no": "5.13",
+     "langkah": "Inquiry Status atas transaksi RTGS Transfer berhasil\n\nField \"serviceCode\" diisi dengan value \"22\"\nField \"latestTransactionStatus\" diisi dengan value \"00\"",
+     "remarks": ""
+    },
+    {
+     "no": "5.14",
+     "langkah": "Notification for Successful Transaction\n\nField \"latestTransactionStatus\" diisi dengan value \"00\"",
+     "remarks": "Tidak dites karena tidak ada pengetesan RTGS Notification"
+    },
+    {
+     "no": "5.15",
+     "langkah": "Notification for Failed Transaction\n\nField \"latestTransactionStatus\" diisi dengan value \"06\"",
+     "remarks": "Tidak dites karena tidak ada pengetesan RTGS Notification"
+    }
+   ]
+  },
+  "SKNBI Transfer": {
+   "alasan_api": "Tidak di test karena mitra tidak menggunakan SKNBI Transfer",
+   "kasus": [
+    {
+     "no": "6.1",
+     "langkah": "Access Token Invalid",
+     "remarks": "Tidak di test karena mitra tidak menggunakan SKNBI Transfer"
+    },
+    {
+     "no": "6.2",
+     "langkah": "Unauthorized . Signature",
+     "remarks": ""
+    },
+    {
+     "no": "6.3",
+     "langkah": "Missing Mandatory Field {} …, etc",
+     "remarks": ""
+    },
+    {
+     "no": "6.4",
+     "langkah": "Invalid Field Format {} .., etc",
+     "remarks": ""
+    },
+    {
+     "no": "6.5",
+     "langkah": "Cannot use the same X-EXTERNAL-ID",
+     "remarks": ""
+    },
+    {
+     "no": "6.6",
+     "langkah": "Inquiry Account via Switching X, with SWIFT code",
+     "remarks": "Tidak dites karena hanya menggunakan bank code."
+    },
+    {
+     "no": "6.7",
+     "langkah": "Inquiry Account via Switching X, with bank code",
+     "remarks": ""
+    },
+    {
+     "no": "6.8",
+     "langkah": "Inquiry account yang sudah tutup/tidak aktif",
+     "remarks": "Tidak dites karena igate tidak ada validasi sehingga akan tetap muncul balance dari account tersebut."
+    },
+    {
+     "no": "6.9",
+     "langkah": "Transfer to Account via SKN, with SWIFT code",
+     "remarks": "Tidak dites karena hanya menggunakan bank code."
+    },
+    {
+     "no": "6.10",
+     "langkah": "Transfer to Account via SKN, with bank code",
+     "remarks": ""
+    },
+    {
+     "no": "6.11",
+     "langkah": "Insufficient Fund/Saldo tidak cukup",
+     "remarks": ""
+    },
+    {
+     "no": "6.12",
+     "langkah": "Duplicate Customer Reference Number",
+     "remarks": ""
+    },
+    {
+     "no": "6.13",
+     "langkah": "Inquiry Status atas transaksi SKNBI Transfer berhasil\n\nField \"serviceCode\" diisi dengan value \"23\"\nField \"latestTransactionStatus\" diisi dengan value \"00\"",
+     "remarks": ""
+    },
+    {
+     "no": "6.14",
+     "langkah": "Notification for Successful Transaction\n\nField \"latestTransactionStatus\" diisi dengan value \"00\"",
+     "remarks": "Tidak dites karena tidak ada pengetesan SKNBI Notification."
+    },
+    {
+     "no": "6.15",
+     "langkah": "Notification for Failed Transaction\n\nField \"latestTransactionStatus\" diisi dengan value \"06\"",
+     "remarks": "Tidak dites karena tidak ada pengetesan SKNBI Notification."
+    }
+   ]
+  },
+  "Transfer VA": {
+   "alasan_api": "Tidak di test karena mitra tidak menggunakan Transfer Virtual Account",
+   "kasus": [
+    {
+     "no": "7.1",
+     "langkah": "Access Token Invalid",
+     "remarks": "Tidak di test karena mitra tidak menggunakan Transfer Virtual Account"
+    },
+    {
+     "no": "7.2",
+     "langkah": "Unauthorized . Signature",
+     "remarks": ""
+    },
+    {
+     "no": "7.3",
+     "langkah": "Missing Mandatory Field {} …, etc",
+     "remarks": ""
+    },
+    {
+     "no": "7.4",
+     "langkah": "Invalid Field Format {} .., etc",
+     "remarks": ""
+    },
+    {
+     "no": "7.5",
+     "langkah": "Cannot use the same X-EXTERNAL-ID",
+     "remarks": ""
+    },
+    {
+     "no": "7.6",
+     "langkah": "Input no Virtual Account Valid",
+     "remarks": ""
+    },
+    {
+     "no": "7.7",
+     "langkah": "Input no Virtual Account Valid sudah lunas",
+     "remarks": ""
+    },
+    {
+     "no": "7.8",
+     "langkah": "Input no Virtual Account Valid kadaluarsa",
+     "remarks": ""
+    },
+    {
+     "no": "7.9",
+     "langkah": "Input no Virtual Account tidak terdaftar",
+     "remarks": ""
+    },
+    {
+     "no": "7.10",
+     "langkah": "Input no Virtual Account Valid",
+     "remarks": ""
+    },
+    {
+     "no": "7.11",
+     "langkah": "Input no Virtual Account tidak terdaftar",
+     "remarks": "Tidak ditest karena sudah ada validasi saat inquiry"
+    },
+    {
+     "no": "7.12",
+     "langkah": "Invalid Amount",
+     "remarks": ""
+    },
+    {
+     "no": "7.13",
+     "langkah": "Inquiry Status for Payment Success",
+     "remarks": ""
+    },
+    {
+     "no": "7.14",
+     "langkah": "Membuat Virtual Account No",
+     "remarks": "Tidak ditest karena hanya mitra yang mempunyai akses Create VA"
+    },
+    {
+     "no": "7.15",
+     "langkah": "Create VA dengan tanggal kadaluarsa (expired date) di masa lalu",
+     "remarks": "Tidak ditest karena hanya mitra yang mempunyai akses Create VA"
+    },
+    {
+     "no": "7.16",
+     "langkah": "Melakukan pengkinian Virtual Account No",
+     "remarks": "Tidak ditest karena hanya mitra yang mempunyai akses Create VA"
+    },
+    {
+     "no": "7.17",
+     "langkah": "Melakukan pengkinian status Virtual Account No",
+     "remarks": "Tidak ditest karena hanya mitra yang mempunyai akses Create VA"
+    },
+    {
+     "no": "7.18",
+     "langkah": "Melakukan inquiry apakah Virtual Account No sudah berhasil dibuat",
+     "remarks": "Tidak ditest karena hanya mitra yang mempunyai akses Create VA"
+    },
+    {
+     "no": "7.19",
+     "langkah": "Menghapus Virtual Account No",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.20",
+     "langkah": "Input no Virtual Account Valid",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.21",
+     "langkah": "Input no Virtual Account Valid sudah lunas",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.22",
+     "langkah": "Input no Virtual Account Valid kadaluarsa",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.23",
+     "langkah": "Input no Virtual Account tidak terdaftar",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.24",
+     "langkah": "Timeout Partner A to PJP",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.25",
+     "langkah": "Timeout PJP to Partner B",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.26",
+     "langkah": "Input no Virtual Account Valid",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.27",
+     "langkah": "Input no Virtual Account Valid sudah lunas",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.28",
+     "langkah": "Input no Virtual Account Valid kadaluarsa",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.29",
+     "langkah": "Input no Virtual Account tidak terdaftar",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.30",
+     "langkah": "Timeout Partner A to PJP",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.31",
+     "langkah": "Timeout PJP to Partner B",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.32",
+     "langkah": "Notifikasi",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.33",
+     "langkah": "Show Virtual Account Report",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    },
+    {
+     "no": "7.34",
+     "langkah": "Inquiry Status",
+     "remarks": "Tidak ditest karena hanya mitra yang bisa create dan akses"
+    }
+   ]
+  },
+  "Transfer VA Prima": {
+   "alasan_api": "Tidak di test karena mitra tidak menggunakan Transfer Virtual Account Prima",
+   "kasus": [
+    {
+     "no": "8.1",
+     "langkah": "Input no Virtual Account Valid",
+     "remarks": "Tidak di test karena mitra tidak menggunakan Transfer Virtual Account Prima"
+    },
+    {
+     "no": "8.2",
+     "langkah": "Input no Virtual Account Valid sudah lunas",
+     "remarks": ""
+    },
+    {
+     "no": "8.3",
+     "langkah": "Input no Virtual Account Valid kadaluarsa",
+     "remarks": ""
+    },
+    {
+     "no": "8.4",
+     "langkah": "Input no Virtual Account tidak terdaftar",
+     "remarks": ""
+    },
+    {
+     "no": "8.5",
+     "langkah": "Input no Virtual Account Valid",
+     "remarks": ""
+    },
+    {
+     "no": "8.6",
+     "langkah": "Input no Virtual Account tidak terdaftar",
+     "remarks": "Tidak dites karena sudah terkena validasi pada saat inquiry."
+    },
+    {
+     "no": "8.7",
+     "langkah": "Invalid Amount",
+     "remarks": ""
+    }
+   ]
+  },
+  "Transfer VA BI FAST": {
+   "alasan_api": "Tidak di test karena mitra tidak menggunakan Transfer Virtual Account Bifast",
+   "kasus": [
+    {
+     "no": "9.1",
+     "langkah": "Input no Virtual Account Valid",
+     "remarks": "Tidak di test karena mitra tidak menggunakan Transfer Virtual Account Bifast"
+    },
+    {
+     "no": "9.2",
+     "langkah": "Input no Virtual Account Valid sudah lunas",
+     "remarks": ""
+    },
+    {
+     "no": "9.3",
+     "langkah": "Input no Virtual Account Valid kadaluarsa",
+     "remarks": ""
+    },
+    {
+     "no": "9.4",
+     "langkah": "Input no Virtual Account tidak terdaftar",
+     "remarks": ""
+    },
+    {
+     "no": "9.5",
+     "langkah": "Input no Virtual Account Valid",
+     "remarks": ""
+    },
+    {
+     "no": "9.6",
+     "langkah": "Input no Virtual Account tidak terdaftar",
+     "remarks": "Tidak dites karena sudah terkena validasi pada saat inquiry."
+    },
+    {
+     "no": "9.7",
+     "langkah": "Invalid Amount",
+     "remarks": ""
+    },
+    {
+     "no": "10.1",
+     "langkah": "Lakukan transaksi VA",
+     "remarks": ""
+    },
+    {
+     "no": "10.2",
+     "langkah": "Lakukan COB",
+     "remarks": ""
+    },
+    {
+     "no": "10.3",
+     "langkah": "Cek perhitungan cashback",
+     "remarks": ""
+    }
+   ]
+  },
+  "PENGECEKAN MUTASI DAN JURNAL": {
+   "alasan_api": "",
+   "kasus": [
+    {
+     "no": "11.1",
+     "langkah": "Melakukan cek mutasi pada T24",
+     "remarks": ""
+    },
+    {
+     "no": "12.1",
+     "langkah": "Cek Transaksi Daily Report (4 sheet)",
+     "remarks": ""
+    }
+   ]
+  }
+ }
+}
