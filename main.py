@@ -777,10 +777,18 @@ def _format_headers(headers_raw):
     if not pairs:
         return ""
 
-    # SATU BARIS (permintaan user), dipisah koma tanpa enter:
-    #   ["Key=Value","Key=Value"]
+    # PRETTIFY (permintaan user): satu header per baris, indentasi 2 spasi.
+    #   [
+    #     "Key=Value",
+    #     "Key=Value"
+    #   ]
     # Value tetap apa adanya; hanya pembungkus kutip & koma yang ditambahkan.
-    return "[" + ",".join(f'"{p}"' for p in pairs) + "]"
+    out = ["["]
+    for i, p in enumerate(pairs):
+        comma = "," if i < len(pairs) - 1 else ""
+        out.append(f'  "{p}"{comma}')
+    out.append("]")
+    return "\n".join(out)
 
 
 def _json_loads_toleran(raw):

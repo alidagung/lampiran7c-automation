@@ -9,12 +9,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from main import _format_headers
 
-# Header Request 7C: SATU BARIS
+# Header Request 7C: PRETTIFY (satu header per baris)
 CONTOH = (
-    '["content-type=application/json",'
-    '"X-PARTNER-ID=x8ir2mpkj477amer19biu4kn2l8cwlcw",'
-    '"Authorization=Bearer test",'
-    '"Cookie=Path=/"]'
+    '[\n'
+    '  "content-type=application/json",\n'
+    '  "X-PARTNER-ID=x8ir2mpkj477amer19biu4kn2l8cwlcw",\n'
+    '  "Authorization=Bearer test",\n'
+    '  "Cookie=Path=/"\n'
+    ']'
 )
 
 
