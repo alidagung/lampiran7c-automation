@@ -694,6 +694,30 @@ def _remark_berisi_log(remarks_text):
     return bool(_LOG_MARKER_RE.search(remarks_text or ""))
 
 
+_STATUS_TIDAK_DITES = ("tidak dites", "belum dites", "siap dites", "butuh konfirmasi")
+
+
+def _alasan_level_api(rows):
+    """
+    Alasan tidak dites level API = Remarks case PERTAMA sebuah API/section bila
+    case itu berstatus tidak dites (Tidak/Belum/Siap dites, Butuh konfirmasi)
+    dan Remarks-nya berupa catatan (bukan log). Contoh UAT Script Sinaptiq:
+      1.1 Belum dites | "Tidak dites karena Mitra tidak menggunakan Balance Services"
+      1.2 Belum dites | (kosong)  -> Notes 7C memakai alasan 1.1
+    Mengembalikan "" bila tidak ada.
+    """
+    if not rows:
+        return ""
+    first = rows[0]
+    hasil = str(first.get("hasil_aktual", "") or "").strip().lower()
+    remarks = str(first.get("remarks", "") or "").strip()
+    if hasil not in _STATUS_TIDAK_DITES or not remarks or remarks.lower() == "none":
+        return ""
+    if _remark_berisi_log(remarks):
+        return ""
+    return remarks
+
+
 def _format_headers(headers_raw):
     """
     Format blok Headers dari UAT Script ke format array Lampiran 7C.
@@ -1365,7 +1389,7 @@ def detect_anomalies(row_data, display_no=None, request_mode="default"):
         if not remarks.strip() or remarks.strip().lower() == "none":
             warnings.append(
                 f"Kasus {kasus}: '{str(row_data.get('hasil_aktual', '')).strip()}' tetapi kolom "
-                f"Remarks kosong (tidak ada alasan) — Notes dibiarkan kosong sesuai UAT Script.")
+                f"Remarks kosong (tidak ada alasan) — Notes kosong (case pertama API ini juga tanpa alasan).")
         return warnings
 
     # Hanya periksa baris yang seharusnya punya log (Berhasil)
@@ -1562,6 +1586,12 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
         if target_count is None:
             continue
 
+        # Alasan level API: Remarks case pertama (x.1) yang tidak dites, mis.
+        # "Tidak dites karena Mitra tidak menggunakan Balance Services". Alasan
+        # ini dipakai sebagai Notes case lain di API yang sama yang Remarks-nya
+        # kosong (teks disalin apa adanya dari UAT Script).
+        alasan_api = _alasan_level_api(rows)
+
         for row_data in rows:
             sub_num = extract_sub_number(row_data['nomor_kasus_tes'])
             if sub_num is None or sub_num < 1 or sub_num > target_count:
@@ -1595,12 +1625,13 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
                 if remarks_text and remarks_text.strip().lower() != "none":
                     notes = remarks_text.strip()
                 else:
-                    # Remark kosong: Notes ikut kosong (mengikuti UAT Script
-                    # apa adanya, seperti contoh UAT Script PT Integrasi Sinaptiq).
-                    notes = ""
+                    # Remark kosong: pakai alasan level API (Remarks case x.1)
+                    # bila ada; bila tidak, Notes kosong.
+                    notes = alasan_api
             elif not remarks_text or remarks_text.lower() == "none":
-                # Remarks kosong: Request, Response & Notes kosong (apa adanya).
-                notes = ""
+                # Remarks kosong: Request & Response kosong. Untuk status N/A
+                # Notes memakai alasan level API (Remarks case x.1) bila ada.
+                notes = alasan_api if result_value == "N/A" else ""
             elif (hasil_aktual.lower().strip() in ("siap dites", "butuh konfirmasi")
                   and not _remark_berisi_log(remarks_text)):
                 # Siap dites / Butuh konfirmasi TANPA log: Remark hanya berupa
@@ -1660,9 +1691,13 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
             display_no = f"{section_prefix}.{sub_num}"
         else:
             display_no = row_data['nomor_kasus_tes']
-        warnings.extend(
-            detect_anomalies(row_data, display_no=display_no, request_mode=request_mode)
-        )
+        w = detect_anomalies(row_data, display_no=display_no, request_mode=request_mode)
+        # Remarks kosong tapi Notes sudah terisi alasan level API -> tidak perlu
+        # notifikasi "tidak ada alasan".
+        terisi = lampiran_data[target_section][sub_num - 1]
+        if terisi and terisi.get("notes"):
+            w = [x for x in w if "Remarks kosong (tidak ada alasan)" not in x]
+        warnings.extend(w)
 
     if collect_warnings:
         return lampiran_data, warnings

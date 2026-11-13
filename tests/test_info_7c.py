@@ -113,3 +113,38 @@ class TestNotesTidakDites:
         assert len(w) == 1 and "7.1" in w[0] and "Remarks kosong" in w[0]
         assert m.detect_anomalies({"nomor_kasus_tes": "7.1", "hasil_aktual": "Tidak dites",
                                    "remarks": "alasan"}) == []
+
+
+class TestAlasanLevelApi:
+    """Remarks case x.1 (API tidak dites) jadi Notes case lain yang Remarks-nya kosong."""
+
+    def _rows(self, first_hasil, first_remark):
+        return [
+            {"nomor_kasus_tes": "1.1", "langkah_tes": "a", "hasil_aktual": first_hasil,
+             "hasil_diharapkan": "", "nama_modul": "Any Service", "remarks": first_remark},
+            {"nomor_kasus_tes": "1.2", "langkah_tes": "b", "hasil_aktual": "Belum dites",
+             "hasil_diharapkan": "", "nama_modul": "Any Service", "remarks": ""},
+            {"nomor_kasus_tes": "1.3", "langkah_tes": "c", "hasil_aktual": "Tidak dites",
+             "hasil_diharapkan": "", "nama_modul": "Balance Inquiry", "remarks": "Alasan sendiri"},
+        ]
+
+    def _notes(self, rows):
+        data, w = m.map_uat_to_lampiran({"Balance Services": rows}, collect_warnings=True,
+                                        profile=m.PRODUCT_PROFILES["FT_VA"])
+        r = data["API Balance Inquiry"]
+        return [x["notes"] for x in r[:3]], w
+
+    def test_alasan_x1_dipakai_untuk_remark_kosong(self):
+        alasan = "Tidak dites karena Mitra tidak menggunakan Balance Services"
+        notes, w = self._notes(self._rows("Belum dites", alasan))
+        assert notes == [alasan, alasan, "Alasan sendiri"]
+        assert not [x for x in w if "Remarks kosong" in x]
+
+    def test_x1_berhasil_tidak_diwariskan(self):
+        notes, _ = self._notes(self._rows("Berhasil", 'URL:\nhttps://x\n\nResponse:\n{"a":1}'))
+        assert notes[1] == "" and notes[2] == "Alasan sendiri"
+
+    def test_x1_tanpa_alasan_notes_kosong_dan_notifikasi(self):
+        notes, w = self._notes(self._rows("Tidak dites", ""))
+        assert notes[:2] == ["", ""]
+        assert len([x for x in w if "Remarks kosong" in x]) == 2
