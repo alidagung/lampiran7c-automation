@@ -143,7 +143,12 @@ STATUS_CEK = "perlu dicek"
 
 def _status_aktif(hasil_aktual):
     """True bila case benar-benar dipakai (bukan 'Tidak dites')."""
-    return str(hasil_aktual or "").strip().lower() not in ("", "tidak dites")
+    # Toleran variasi penulisan: "Tidak di test", "Tidak ditest", "N/A", "Not Tested" ...
+    from main import _norm_status, _STATUS_NA_LAIN
+    s = _norm_status(hasil_aktual)
+    if not s or s in _STATUS_NA_LAIN:
+        return False
+    return not re.match(r"^tidak(di)?(tes|test|testing|tested|dites|ditest)$", s)
 
 
 def validasi_api(uat_data):

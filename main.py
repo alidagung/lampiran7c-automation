@@ -696,6 +696,50 @@ def _remark_berisi_log(remarks_text):
 
 _STATUS_TIDAK_DITES = ("tidak dites", "belum dites", "siap dites", "butuh konfirmasi")
 
+_STATUS_PASS = {"berhasil", "pass", "passed", "sesuai", "ok", "success", "sukses"}
+_STATUS_NOT_PASS = {"gagal", "fail", "failed", "notpass", "tidaksesuai", "tidakberhasil"}
+_STATUS_NA_LAIN = {"n/a", "na", "nottested", "nottest", "notapplicable", "skip", "skipped"}
+_RE_NA_TES = re.compile(r"^(tidak|belum|siap)(di)?(tes|test|testing|tested|dites|ditest)$")
+_RE_NA_KONFIRMASI = re.compile(r"^(butuh|perlu|menunggu)konfirmasi")
+
+
+def _norm_status(hasil_aktual):
+    """'Tidak  di-test ' / 'N/A' / 'Tidak dites\xa0' -> 'tidakditest' / 'n/a' / 'tidakdites'."""
+    teks = str(hasil_aktual or "").replace("\xa0", " ").lower()
+    return re.sub(r"[\s_\-.]+", "", teks)
+
+
+def kategori_status(hasil_aktual):
+    """
+    Kategori Hasil Aktual, TOLERAN terhadap variasi penulisan:
+      "PASS"     : Berhasil / Pass / Sesuai ...
+      "NOT PASS" : Gagal / Fail / Tidak sesuai ...
+      "N/A"      : Tidak dites / Tidak di test / Tidak ditest / Belum di test /
+                   Siap dites / Butuh konfirmasi / N/A / NA / Not Tested / Skip ...
+      ""         : kosong;  None : tidak dikenali
+    """
+    s = _norm_status(hasil_aktual)
+    if not s:
+        return ""
+    if s in _STATUS_PASS:
+        return "PASS"
+    if s in _STATUS_NOT_PASS:
+        return "NOT PASS"
+    if s in _STATUS_NA_LAIN or _RE_NA_TES.match(s) or _RE_NA_KONFIRMASI.match(s):
+        return "N/A"
+    return None
+
+
+def status_menunggu(hasil_aktual):
+    """True untuk Siap dites / Butuh konfirmasi (log di Remarks tetap dilampirkan)."""
+    s = _norm_status(hasil_aktual)
+    return bool(_RE_NA_KONFIRMASI.match(s) or re.match(r"^siap(di)?(tes|test)", s))
+
+
+def status_tidak_dites(hasil_aktual):
+    """True untuk semua status N/A (tidak dites, belum dites, N/A, dst.)."""
+    return kategori_status(hasil_aktual) == "N/A"
+
 
 def _alasan_level_api(rows):
     """
@@ -711,7 +755,7 @@ def _alasan_level_api(rows):
     first = rows[0]
     hasil = str(first.get("hasil_aktual", "") or "").strip().lower()
     remarks = str(first.get("remarks", "") or "").strip()
-    if hasil not in _STATUS_TIDAK_DITES or not remarks or remarks.lower() == "none":
+    if not status_tidak_dites(hasil) or not remarks or remarks.lower() == "none":
         return ""
     if _remark_berisi_log(remarks):
         return ""
@@ -1298,13 +1342,9 @@ def map_result_value(hasil_aktual):
     """
     if not hasil_aktual:
         return ""
-    lower = hasil_aktual.lower().strip()
-    if lower == "berhasil":
-        return "PASS"
-    elif lower == "gagal":
-        return "NOT PASS"
-    elif lower in ("tidak dites", "belum dites", "siap dites", "butuh konfirmasi"):
-        return "N/A"
+    kategori = kategori_status(hasil_aktual)
+    if kategori:
+        return kategori
     return hasil_aktual
 
 
@@ -1384,8 +1424,15 @@ def detect_anomalies(row_data, display_no=None, request_mode="default"):
     hasil = str(row_data.get('hasil_aktual', '')).strip().lower()
     remarks = row_data.get('remarks', '') or ""
 
-    # Baris N/A tanpa alasan di Remarks: Notes diisi status Hasil Aktual -> beri tahu.
-    if hasil in ("tidak dites", "belum dites", "siap dites", "butuh konfirmasi"):
+    if kategori_status(hasil) is None:
+        warnings.append(
+            f"Kasus {kasus}: status Hasil Aktual '{str(row_data.get('hasil_aktual', '')).strip()}' "
+            f"tidak dikenali (bukan Berhasil/Gagal/Tidak dites/Belum dites/N/A) — mohon cek; "
+            f"Remarks diproses sebagai log Request/Response.")
+        return warnings
+
+    # Baris N/A tanpa alasan di Remarks -> beri tahu.
+    if status_tidak_dites(hasil):
         if not remarks.strip() or remarks.strip().lower() == "none":
             warnings.append(
                 f"Kasus {kasus}: '{str(row_data.get('hasil_aktual', '')).strip()}' tetapi kolom "
@@ -1393,7 +1440,7 @@ def detect_anomalies(row_data, display_no=None, request_mode="default"):
         return warnings
 
     # Hanya periksa baris yang seharusnya punya log (Berhasil)
-    if hasil != "berhasil":
+    if kategori_status(hasil) != "PASS":
         return warnings
 
     if not remarks.strip() or remarks.strip().lower() == "none":
@@ -1616,7 +1663,7 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
             service = row_data.get('nama_modul', '') or target_section
 
             # Cek kondisi khusus
-            if hasil_aktual.lower().strip() in ("tidak dites", "belum dites"):
+            if status_tidak_dites(hasil_aktual) and not status_menunggu(hasil_aktual):
                 # Tidak dites / Belum dites: baris tetap ditampilkan (Result N/A).
                 # Kolom Request & Response dikosongkan, dan isi Remark dipindahkan
                 # ke kolom Notes (apa adanya).
@@ -1632,7 +1679,7 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
                 # Remarks kosong: Request & Response kosong. Untuk status N/A
                 # Notes memakai alasan level API (Remarks case x.1) bila ada.
                 notes = alasan_api if result_value == "N/A" else ""
-            elif (hasil_aktual.lower().strip() in ("siap dites", "butuh konfirmasi")
+            elif (status_menunggu(hasil_aktual)
                   and not _remark_berisi_log(remarks_text)):
                 # Siap dites / Butuh konfirmasi TANPA log: Remark hanya berupa
                 # catatan/notifikasi -> dilampirkan ke kolom Notes (apa adanya).
@@ -2367,7 +2414,7 @@ def build_uat_result_document(uat_data, title=None, product_key="FT_VA"):
 
             remarks = row.get('remarks', '') or ""
             hasil = str(row.get('hasil_aktual', '')).strip().lower()
-            tidak_dites = hasil in ("tidak dites", "belum dites", "siap dites", "butuh konfirmasi")
+            tidak_dites = status_tidak_dites(hasil)
 
             if remarks.strip() and remarks.strip().lower() != "none":
                 _add_case_body(doc, remarks, request_mode=request_mode, tidak_dites=tidak_dites)

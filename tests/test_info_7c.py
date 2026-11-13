@@ -148,3 +148,28 @@ class TestAlasanLevelApi:
         notes, w = self._notes(self._rows("Tidak dites", ""))
         assert notes[:2] == ["", ""]
         assert len([x for x in w if "Remarks kosong" in x]) == 2
+
+
+class TestVariasiStatus:
+    """Variasi penulisan status tidak dites: Remarks tetap pindah ke Notes."""
+
+    VARIASI = ["N/A", "n/a", "NA", "Tidak di test", "Tidak ditest", "Tidak Di-Test", "Tidak dites\xa0",
+               "TIDAK DITES", "Belum di test", "Belum ditest", "Not Tested", "Skip", "Siap di test",
+               "Butuh Konfirmasi Mitra"]
+
+    @pytest.mark.parametrize("hasil", VARIASI)
+    def test_kategori_na(self, hasil):
+        assert m.kategori_status(hasil) == "N/A"
+        assert m.map_result_value(hasil) == "N/A"
+
+    @pytest.mark.parametrize("hasil, kat", [("Berhasil", "PASS"), ("PASS", "PASS"), ("Gagal", "NOT PASS"),
+                                            ("Not Pass", "NOT PASS"), ("", ""), ("Lain", None)])
+    def test_kategori_lain(self, hasil, kat):
+        assert m.kategori_status(hasil) == kat
+
+    @pytest.mark.parametrize("hasil", VARIASI)
+    def test_remark_pindah_ke_notes(self, hasil):
+        r = TestSiapDitesButuhKonfirmasi._map(None, hasil, "Tidak dites karena Mitra tidak menggunakan X")
+        assert r["request"] == "" and r["response"] == ""
+        assert r["notes"] == "Tidak dites karena Mitra tidak menggunakan X"
+        assert r["result"] == "N/A"
