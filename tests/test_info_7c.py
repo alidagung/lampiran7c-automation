@@ -91,9 +91,9 @@ class TestSiapDitesButuhKonfirmasi:
         assert r["notes"] == "Menunggu update fixing dari vendor."
         assert r["result"] == "N/A"
 
-    def test_remark_kosong_notes_berisi_status(self):
+    def test_remark_kosong_notes_kosong(self):
         r = self._map("Siap dites", "")
-        assert (r["request"], r["response"], r["notes"]) == ("", "", "Siap dites")
+        assert (r["request"], r["response"], r["notes"]) == ("", "", "")
 
 
 class TestNotesTidakDites:
@@ -101,9 +101,9 @@ class TestNotesTidakDites:
         return TestSiapDitesButuhKonfirmasi._map(None, hasil, remarks)
 
     @pytest.mark.parametrize("hasil", ["Tidak dites", "Belum dites", "Siap dites", "Butuh konfirmasi"])
-    def test_remark_kosong_notes_diisi_status(self, hasil):
+    def test_remark_kosong_notes_ikut_kosong(self, hasil):
         r = self._map(hasil, "")
-        assert r["notes"] == hasil and r["result"] == "N/A"
+        assert r["notes"] == "" and r["result"] == "N/A"
 
     def test_remark_ada_dipakai_apa_adanya(self):
         assert self._map("Tidak dites", "Tidak dites karena X.")["notes"] == "Tidak dites karena X."

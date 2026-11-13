@@ -259,7 +259,7 @@ Response:
 
     def test_tidak_dites_empty_remarks(self):
         """Test handling ketika Hasil Aktual = 'Tidak dites' dan Remarks kosong.
-        Notes diisi status Hasil Aktual karena tidak ada Remark."""
+        Notes ikut kosong (mengikuti Remarks UAT Script)."""
         uat_data = {
             "Balance Services": [
                 self._make_row("1.1", hasil_aktual="Tidak dites", remarks=""),
@@ -271,7 +271,7 @@ Response:
         assert result["API Balance Inquiry"][0] is not None
         assert result["API Balance Inquiry"][0]['request'] == ""
         assert result["API Balance Inquiry"][0]['response'] == ""
-        assert result["API Balance Inquiry"][0]['notes'] == "Tidak dites"
+        assert result["API Balance Inquiry"][0]['notes'] == ""
 
     def test_belum_dites_handling(self):
         """Test handling ketika Hasil Aktual = 'Belum dites'.
