@@ -91,6 +91,25 @@ class TestSiapDitesButuhKonfirmasi:
         assert r["notes"] == "Menunggu update fixing dari vendor."
         assert r["result"] == "N/A"
 
-    def test_remark_kosong_tetap_kosong(self):
+    def test_remark_kosong_notes_berisi_status(self):
         r = self._map("Siap dites", "")
-        assert (r["request"], r["response"], r["notes"]) == ("", "", "")
+        assert (r["request"], r["response"], r["notes"]) == ("", "", "Siap dites")
+
+
+class TestNotesTidakDites:
+    def _map(self, hasil, remarks):
+        return TestSiapDitesButuhKonfirmasi._map(None, hasil, remarks)
+
+    @pytest.mark.parametrize("hasil", ["Tidak dites", "Belum dites", "Siap dites", "Butuh konfirmasi"])
+    def test_remark_kosong_notes_diisi_status(self, hasil):
+        r = self._map(hasil, "")
+        assert r["notes"] == hasil and r["result"] == "N/A"
+
+    def test_remark_ada_dipakai_apa_adanya(self):
+        assert self._map("Tidak dites", "Tidak dites karena X.")["notes"] == "Tidak dites karena X."
+
+    def test_notifikasi_remark_kosong(self):
+        w = m.detect_anomalies({"nomor_kasus_tes": "7.1", "hasil_aktual": "Tidak dites", "remarks": ""})
+        assert len(w) == 1 and "7.1" in w[0] and "Remarks kosong" in w[0]
+        assert m.detect_anomalies({"nomor_kasus_tes": "7.1", "hasil_aktual": "Tidak dites",
+                                   "remarks": "alasan"}) == []

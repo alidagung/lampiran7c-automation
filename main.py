@@ -1360,6 +1360,14 @@ def detect_anomalies(row_data, display_no=None, request_mode="default"):
     hasil = str(row_data.get('hasil_aktual', '')).strip().lower()
     remarks = row_data.get('remarks', '') or ""
 
+    # Baris N/A tanpa alasan di Remarks: Notes diisi status Hasil Aktual -> beri tahu.
+    if hasil in ("tidak dites", "belum dites", "siap dites", "butuh konfirmasi"):
+        if not remarks.strip() or remarks.strip().lower() == "none":
+            warnings.append(
+                f"Kasus {kasus}: '{str(row_data.get('hasil_aktual', '')).strip()}' tetapi kolom "
+                f"Remarks kosong (tidak ada alasan) — Notes diisi status Hasil Aktual.")
+        return warnings
+
     # Hanya periksa baris yang seharusnya punya log (Berhasil)
     if hasil != "berhasil":
         return warnings
@@ -1587,10 +1595,13 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
                 if remarks_text and remarks_text.strip().lower() != "none":
                     notes = remarks_text.strip()
                 else:
-                    notes = ""
+                    # Remark kosong: Notes tetap dilampirkan, diisi status
+                    # Hasil Aktual apa adanya (mis. "Tidak dites").
+                    notes = hasil_aktual.strip()
             elif not remarks_text or remarks_text.lower() == "none":
-                # Remarks kosong: Request dan Response kosong
-                notes = ""
+                # Remarks kosong: Request dan Response kosong. Untuk status N/A
+                # (Siap dites / Butuh konfirmasi) Notes diisi status Hasil Aktual.
+                notes = hasil_aktual.strip() if result_value == "N/A" else ""
             elif (hasil_aktual.lower().strip() in ("siap dites", "butuh konfirmasi")
                   and not _remark_berisi_log(remarks_text)):
                 # Siap dites / Butuh konfirmasi TANPA log: Remark hanya berupa

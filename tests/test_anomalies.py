@@ -57,12 +57,15 @@ class TestDetectAnomalies:
         w = detect_anomalies(_row("3.2", "Berhasil", remarks))
         assert any("Response tidak ditemukan" in x for x in w)
 
-    def test_tidak_dites_tidak_ada_warning(self):
-        # Baris yang tidak dites tidak seharusnya memicu peringatan
-        assert detect_anomalies(_row("4.1", "Tidak dites", "")) == []
+    def test_tidak_dites_dengan_alasan_tidak_ada_warning(self):
+        assert detect_anomalies(_row("4.1", "Tidak dites", "Tidak dites karena X")) == []
 
-    def test_belum_dites_tidak_ada_warning(self):
-        assert detect_anomalies(_row("4.2", "Belum dites", "")) == []
+    def test_tidak_dites_tanpa_alasan_diberi_notifikasi(self):
+        w = detect_anomalies(_row("4.1", "Tidak dites", ""))
+        assert len(w) == 1 and "4.1" in w[0] and "Remarks kosong" in w[0]
+
+    def test_belum_dites_tanpa_alasan_diberi_notifikasi(self):
+        assert len(detect_anomalies(_row("4.2", "Belum dites", ""))) == 1
 
     def test_warning_menyebut_nomor_kasus(self):
         w = detect_anomalies(_row("7.15", "Berhasil", ""))
