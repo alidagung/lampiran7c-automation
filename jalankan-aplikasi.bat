@@ -31,9 +31,18 @@ if errorlevel 1 (
     echo [INFO] Mengecek pembaruan dari GitHub...
     git pull --ff-only
     if errorlevel 1 (
-        echo [PERINGATAN] Gagal mengambil update otomatis.
-        echo Aplikasi tetap dijalankan dengan versi yang ada di komputer ini.
         echo.
+        echo ************************************************************
+        echo  [PERINGATAN] GAGAL MENGAMBIL UPDATE TERBARU!
+        echo  Aplikasi akan jalan dengan VERSI LAMA.
+        echo.
+        echo  Penyebab umum: ada file di folder ini ^(mis. di input\^)
+        echo  yang sama dengan file baru di GitHub. Baca pesan git di
+        echo  atas, pindahkan/hapus file yang disebut, lalu jalankan
+        echo  file .bat ini lagi.
+        echo ************************************************************
+        echo.
+        pause
     ) else (
         echo [OK] Kode sudah versi terbaru.
         echo.

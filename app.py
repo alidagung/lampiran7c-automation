@@ -367,6 +367,19 @@ def judul_langkah(nomor, judul, sub):
 # SIDEBAR — PENGATURAN TETAP
 # ============================================================
 
+@st.cache_data(show_spinner=False)
+def versi_aplikasi():
+    """Versi kode (commit git) agar pengguna bisa memastikan sudah ter-update."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "log", "-1", "--format=%h · %cd", "--date=format:%d-%m-%Y %H:%M"],
+            cwd=Path(__file__).resolve().parent, capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 _peng = muat_pengaturan()
 with st.sidebar:
     st.markdown(
@@ -375,6 +388,8 @@ with st.sidebar:
         '<div class="sb-app-sub">UAT Script → Lampiran 5A–7C & UAT Result</div>',
         unsafe_allow_html=True,
     )
+    if versi_aplikasi():
+        st.caption(f"Versi: {versi_aplikasi()}")
     st.divider()
     sidebar_mitra = st.container()      # diisi setelah UAT Script diunggah
     st.divider()
