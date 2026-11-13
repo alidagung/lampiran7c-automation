@@ -155,7 +155,7 @@ class TestVariasiStatus:
 
     VARIASI = ["N/A", "n/a", "NA", "Tidak di test", "Tidak ditest", "Tidak Di-Test", "Tidak dites\xa0",
                "TIDAK DITES", "Belum di test", "Belum ditest", "Not Tested", "Skip", "Siap di test",
-               "Butuh Konfirmasi Mitra"]
+               "Butuh Konfirmasi Mitra", "tidak di test", "Tdk di test", "blm dites"]
 
     @pytest.mark.parametrize("hasil", VARIASI)
     def test_kategori_na(self, hasil):

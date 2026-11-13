@@ -699,7 +699,7 @@ _STATUS_TIDAK_DITES = ("tidak dites", "belum dites", "siap dites", "butuh konfir
 _STATUS_PASS = {"berhasil", "pass", "passed", "sesuai", "ok", "success", "sukses"}
 _STATUS_NOT_PASS = {"gagal", "fail", "failed", "notpass", "tidaksesuai", "tidakberhasil"}
 _STATUS_NA_LAIN = {"n/a", "na", "nottested", "nottest", "notapplicable", "skip", "skipped"}
-_RE_NA_TES = re.compile(r"^(tidak|belum|siap)(di)?(tes|test|testing|tested|dites|ditest)$")
+_RE_NA_TES = re.compile(r"^(tidak|tdk|belum|blm|siap)(di)?(tes|test|testing|tested|dites|ditest)$")
 _RE_NA_KONFIRMASI = re.compile(r"^(butuh|perlu|menunggu)konfirmasi")
 
 

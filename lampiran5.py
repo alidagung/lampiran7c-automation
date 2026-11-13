@@ -148,7 +148,7 @@ def _status_aktif(hasil_aktual):
     s = _norm_status(hasil_aktual)
     if not s or s in _STATUS_NA_LAIN:
         return False
-    return not re.match(r"^tidak(di)?(tes|test|testing|tested|dites|ditest)$", s)
+    return not re.match(r"^(tidak|tdk)(di)?(tes|test|testing|tested|dites|ditest)$", s)
 
 
 def validasi_api(uat_data):
