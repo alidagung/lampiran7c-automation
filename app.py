@@ -374,7 +374,8 @@ def versi_aplikasi():
     try:
         out = subprocess.run(
             ["git", "log", "-1", "--format=%h · %cd", "--date=format:%d-%m-%Y %H:%M"],
-            cwd=Path(__file__).resolve().parent, capture_output=True, text=True, timeout=5)
+            cwd=Path(__file__).resolve().parent, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=5)
         return out.stdout.strip() if out.returncode == 0 else ""
     except Exception:  # noqa: BLE001
         return ""
