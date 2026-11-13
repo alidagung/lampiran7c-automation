@@ -124,3 +124,20 @@ class TestConvert7:
 
     def test_qris_dilewati(self):
         assert L7.convert_lampiran_7_bytes(_uat_bytes(), "QRIS", PEN, "") is None
+
+
+class TestTanggalCustomSemuaLampiranA:
+    """Satu tanggal custom dipakai bersama oleh Lampiran 5A, 6A & 7A."""
+
+    def test_tanggal_sama_di_5a_6a_7a(self):
+        import lampiran6 as L6
+        tgl = date(2026, 7, 30)   # Kamis
+        src = _uat_bytes()
+        r5 = L5.convert_lampiran_5_bytes(src, "FT_VA", PEN, "u@x", tanggal=tgl, nomor_surat="SM-1")
+        r6 = L6.convert_lampiran_6_bytes(src, "FT_VA", PEN, "", "u@x", tanggal=tgl)
+        r7 = L7.convert_lampiran_7_bytes(src, "FT_VA", PEN, "", tanggal=tgl)
+        harap = "Pada hari kamis, tanggal 30 bulan juli tahun 2026, telah selesai"
+        for r in (r5, r6, r7):
+            assert r["tanggal"] == tgl
+            teks = "\n".join(p.text for p in Document(io.BytesIO(r["a_bytes"])).paragraphs)
+            assert harap in teks

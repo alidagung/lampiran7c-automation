@@ -291,6 +291,11 @@ st.markdown(
         background: linear-gradient(180deg,#FFF8F2,#FFFFFF);
     }}
 
+    .tgl-pratinjau {{
+        background: #FFF8F2; border: 1px solid rgba(237,125,49,0.28); border-radius: 12px;
+        padding: 8px 14px; font-size: 0.86rem; color: {NAVY}; margin: 2px 0 6px 0;
+    }}
+
     /* ---------- Logo BSS ---------- */
     .sb-logo-card {{
         background: #FFFFFF; border-radius: 16px; padding: 12px 14px 10px 14px; text-align: center;
@@ -329,6 +334,15 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+KEY_TANGGAL = "tanggal_pengujian"
+NAMA_HARI = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+
+
+def format_tanggal_singkat(tgl):
+    """mis. date(2026, 11, 9) -> 'Senin, 9 November 2026'"""
+    return f"{NAMA_HARI[tgl.weekday()]}, {tgl.day} {lampiran5.NAMA_BULAN[tgl.month - 1].capitalize()} {tgl.year}"
 
 
 def stat_card(label, value, kind):
@@ -381,7 +395,7 @@ with st.sidebar:
     with st.expander("💡 Tips"):
         st.markdown(
             "- Nomor surat diambil dari **Nomor Referensi** UAT Script.\n"
-            "- Tanggal pengujian = **tanggal hari ini**.\n"
+            "- Tanggal pengujian 5A, 6A & 7A diatur di **langkah 2** (default hari ini).\n"
             "- UAT Result: di Word klik kanan Daftar Isi → **Update Field**.\n"
             "- Aplikasi berjalan **100% lokal**, data tidak dikirim ke internet."
         )
@@ -448,7 +462,7 @@ with st.container(border=True):
                 + chip("Mitra", analisa["pengguna"])
                 + chip("Nomor referensi", analisa["nomor"])
                 + chip("Produk", PRODUCT_LABEL.get(produk, produk or "-"))
-                + chip("Tanggal pengujian", lampiran5.format_tanggal_pengujian(date.today()).capitalize())
+                + chip("Tanggal pengujian", format_tanggal_singkat(st.session_state.get(KEY_TANGGAL, date.today())))
                 + "</div>",
                 unsafe_allow_html=True,
             )
@@ -492,6 +506,9 @@ sub_api_tampil = None
 tanda = None
 pengguna = ""
 nomor_surat = ""
+if KEY_TANGGAL not in st.session_state:
+    st.session_state[KEY_TANGGAL] = date.today()
+tanggal_uji = st.session_state[KEY_TANGGAL]
 
 with st.container(border=True):
     judul_langkah(2, "Validasi API & data mitra",
@@ -550,13 +567,23 @@ with st.container(border=True):
             sub_api_tampil = None
 
         st.markdown("**Data dokumen**")
-        m1, m2 = st.columns([3, 2])
+        m1, m2, m3 = st.columns([3, 2, 2])
         with m1:
             pengguna = st.text_input("Pengguna Layanan (Lampiran 6B & 7B)", value=analisa["pengguna"],
                                      key=f"pengguna_{sig}", help="Otomatis dari judul UAT Script; bisa diedit.")
         with m2:
             nomor_surat = st.text_input("Nomor surat (5A/5B)", value=analisa["nomor"],
                                         key=f"nomor_{sig}", help="Otomatis dari Nomor Referensi UAT Script.")
+        with m3:
+            tanggal_uji = st.date_input(
+                "Tanggal pengujian (5A, 6A, 7A)", key=KEY_TANGGAL, format="DD/MM/YYYY",
+                help="Satu tanggal untuk Lampiran 5A, 6A & 7A. Nama hari dihitung otomatis.",
+            )
+        st.markdown(
+            f'<div class="tgl-pratinjau">📅 Di 5A, 6A &amp; 7A tertulis: <i>"Pada hari '
+            f'{lampiran5.format_tanggal_pengujian(tanggal_uji)}, telah selesai dilakukan …"</i></div>',
+            unsafe_allow_html=True,
+        )
         st.caption("👈 **User Devsite mitra** untuk Lampiran 6B diisi di panel kiri.")
 
 
@@ -576,6 +603,7 @@ with st.container(border=True):
         if lampiran_5_6:
             siap.append(("✅" if nomor_surat.strip() else "⚠️",
                          "Nomor surat" + ("" if nomor_surat.strip() else " belum ada")))
+            siap.append(("📅", f"Tanggal 5A/6A/7A: {format_tanggal_singkat(tanggal_uji)}"))
             siap.append(("✅" if user_devsite_mitra.strip() else "⚠️",
                          "User Devsite mitra" + ("" if user_devsite_mitra.strip()
                                                  else " belum diisi — isi di panel kiri")))
@@ -594,19 +622,21 @@ with st.container(border=True):
                     file_bytes, product=selected_product)
                 lamp5 = lampiran5.convert_lampiran_5_bytes(
                     file_bytes, product_key, penandatangan, user_devsite_bank,
-                    tanda=tanda, nomor_surat=nomor_surat, sub_api_tampil=sub_api_tampil)
+                    tanda=tanda, nomor_surat=nomor_surat, sub_api_tampil=sub_api_tampil,
+                    tanggal=tanggal_uji)
                 lamp6 = lampiran6.convert_lampiran_6_bytes(
                     file_bytes, product_key, penandatangan, pengguna, user_devsite_mitra,
-                    tanda=tanda, sub_api_tampil=sub_api_tampil)
+                    tanda=tanda, sub_api_tampil=sub_api_tampil, tanggal=tanggal_uji)
                 lamp7 = lampiran7.convert_lampiran_7_bytes(
                     file_bytes, product_key, penandatangan, pengguna,
-                    tanda=tanda, sub_api_tampil=sub_api_tampil)
+                    tanda=tanda, sub_api_tampil=sub_api_tampil, tanggal=tanggal_uji)
                 nama_pt = (pengguna or "").strip() or (analisa["pengguna"] if analisa else "")
             st.session_state.hasil = {
                 "sig": sig, "produk": product_key, "stats": stats, "warnings": warnings,
                 "status": status_counts, "lamp5": lamp5, "lamp6": lamp6, "lamp7": lamp7,
                 "dok_utama": [(lampiran_name, lampiran_bytes), (result_name, result_bytes)],
                 "nama_pt": nama_pt,
+                "tanggal": tanggal_uji,
                 "waktu": datetime.now().strftime("%Y%m%d_%H%M%S"),
             }
             st.toast("Dokumen berhasil dibuat!", icon="🎉")
@@ -617,9 +647,10 @@ with st.container(border=True):
                 st.code(str(e))
 
     hasil = st.session_state.hasil
-    hasil_berlaku = hasil is not None and hasil["sig"] == sig
+    hasil_berlaku = (hasil is not None and hasil["sig"] == sig
+                     and hasil.get("tanggal") == tanggal_uji)
     if hasil is not None and not hasil_berlaku and file_ok:
-        st.info("File atau produk berubah — klik **Buat semua dokumen** lagi.")
+        st.info("File, produk, atau tanggal pengujian berubah — klik **Buat semua dokumen** lagi.")
 
     if hasil_berlaku:
         ts = hasil["waktu"]
