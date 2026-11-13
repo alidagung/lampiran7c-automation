@@ -84,8 +84,14 @@ UAT_SHEET_NAME = "UAT Script"
 
 # Info header dokumen Lampiran 7.C
 NAMA_PENYEDIA_LAYANAN = "Bank Sahabat Sampoerna"
+# Nilai default bila tidak diberikan saat membangun dokumen. Pada alur normal
+# (aplikasi & CLI) keduanya diisi OTOMATIS: Nama Pengguna Layanan dari nama PT
+# di judul UAT Script, Tanggal Pengujian dari tanggal yang dipilih / hari ini.
 NAMA_PENGGUNA_LAYANAN = ""
 TANGGAL_PENGUJIAN = ""
+
+BULAN_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli",
+            "Agustus", "September", "Oktober", "November", "Desember"]
 
 # Kolom index di UAT Script (0-based, dengan kolom A kosong)
 # Kolom A (index 0): KOSONG
@@ -323,6 +329,55 @@ def detect_product(uat_data):
 
     # 3) Default: perilaku lama (FT/VA)
     return "FT_VA"
+
+
+def nama_pt_dari_judul(judul):
+    """
+    Ambil nama PT mitra dari judul UAT Script, contoh:
+      "<Penambahan Layanan Fund Transfer Host to Host PT Ezeelink Indonesia - SM-26-04-001-BSS-IS>"
+        -> "PT Ezeelink Indonesia"
+      "<... PT Sender Integrasi Digital (Kirimo) (SM-26-07-004-BSS-IS)>"
+        -> "PT Sender Integrasi Digital"
+    Hanya NAMA PT yang diambil: nomor SM dan semua keterangan dalam kurung
+    (singkatan / nama brand) dibuang. Mengembalikan "" bila tidak ada "PT".
+    """
+    teks = re.sub(r"\s+", " ", str(judul or "").replace("<", " ").replace(">", " ")).strip()
+    m = re.search(r"\bPT\b.*$", teks)
+    if not m:
+        return ""
+    nama = m.group(0).strip()
+    # Buang nomor SM di akhir: " - SM-..." atau " (SM-...)"
+    nama = re.sub(r"\s*[-–]\s*SM-[\w-]+.*$", "", nama)
+    # Buang semua keterangan dalam kurung (singkatan/nama brand/nomor SM)
+    nama = re.sub(r"\s*\([^()]*\)", "", nama)
+    nama = re.sub(r"\s+", " ", nama)
+    return nama.strip(" -–")
+
+
+def read_nama_pengguna(source):
+    """Nama PT mitra dari judul (baris paling atas) sheet UAT Script."""
+    import io
+    if isinstance(source, (bytes, bytearray)):
+        source = io.BytesIO(source)
+    elif hasattr(source, "seek"):
+        source.seek(0)
+    wb = load_workbook(source, read_only=True, data_only=True)
+    try:
+        ws = wb[UAT_SHEET_NAME] if UAT_SHEET_NAME in wb.sheetnames else wb.active
+        for row in ws.iter_rows(min_row=1, max_row=12, values_only=True):
+            for v in row or ():
+                if v and "user acceptance test" in str(v).lower():
+                    nama = nama_pt_dari_judul(v)
+                    if nama:
+                        return nama
+        return ""
+    finally:
+        wb.close()
+
+
+def format_tanggal_7c(tgl):
+    """Tanggal Pengujian Lampiran 7C, mis. date(2026, 9, 4) -> '04 September 2026'."""
+    return f"{tgl.day:02d} {BULAN_ID[tgl.month - 1]} {tgl.year}"
 
 
 def read_uat_script(filepath):
@@ -1762,7 +1817,8 @@ def _add_footer_notes(doc):
         run.font.size = Pt(10)
 
 
-def build_lampiran_document(lampiran_data, profile=None):
+def build_lampiran_document(lampiran_data, profile=None, pengguna_layanan=None,
+                            tanggal_pengujian=None):
     """
     Membangun dokumen Word Lampiran 7C dari data hasil mapping dan
     mengembalikan objek Document (tanpa menyimpan ke disk).
@@ -1774,6 +1830,9 @@ def build_lampiran_document(lampiran_data, profile=None):
         profile: dict profil produk dari PRODUCT_PROFILES. Menentukan urutan
             section yang dirender dan cara penomoran kolom No. Jika None,
             dipakai profil FT/VA (perilaku lama).
+        pengguna_layanan: isi "Nama Pengguna Layanan" (None = NAMA_PENGGUNA_LAYANAN)
+        tanggal_pengujian: isi "Tanggal Pengujian" — datetime.date (diformat
+            mis. "04 September 2026") atau str apa adanya (None = TANGGAL_PENGUJIAN)
 
     Returns:
         docx.Document: dokumen yang siap disimpan.
@@ -1782,6 +1841,14 @@ def build_lampiran_document(lampiran_data, profile=None):
         profile = PRODUCT_PROFILES["FT_VA"]
     sections_def = profile["sections"]
     renumber = profile.get("renumber", True)
+
+    nama_pengguna = NAMA_PENGGUNA_LAYANAN if pengguna_layanan is None else str(pengguna_layanan).strip()
+    if tanggal_pengujian is None:
+        teks_tanggal = TANGGAL_PENGUJIAN
+    elif hasattr(tanggal_pengujian, "strftime"):
+        teks_tanggal = format_tanggal_7c(tanggal_pengujian)
+    else:
+        teks_tanggal = str(tanggal_pengujian).strip()
 
     doc = Document()
 
@@ -1839,13 +1906,14 @@ def build_lampiran_document(lampiran_data, profile=None):
             doc.add_page_break()
 
         # Info penyedia & layanan - paragraf SINGLE (spacing 1.0), font
-        # Calibri ukuran 10. Nama Pengguna & Tanggal sengaja dibiarkan kosong
-        # untuk diisi manual; Nama Layanan API mengikuti nama section.
+        # Calibri ukuran 10. Nama Pengguna Layanan & Tanggal Pengujian diisi
+        # otomatis (nama PT dari judul UAT / tanggal pilihan); Nama Layanan
+        # API mengikuti nama section.
         info_lines = [
             f"Nama Penyedia Layanan : {NAMA_PENYEDIA_LAYANAN}",
-            f"Nama Pengguna Layanan : {NAMA_PENGGUNA_LAYANAN}",
+            f"Nama Pengguna Layanan : {nama_pengguna}",
             f"Nama Layanan API      : {section_name}",
-            f"Tanggal Pengujian     : {TANGGAL_PENGUJIAN}",
+            f"Tanggal Pengujian     : {teks_tanggal}",
         ]
         for line in info_lines:
             p = doc.add_paragraph()
@@ -1940,12 +2008,15 @@ def build_lampiran_document(lampiran_data, profile=None):
     return doc
 
 
-def create_lampiran_document(lampiran_data, output_path, profile=None):
+def create_lampiran_document(lampiran_data, output_path, profile=None,
+                             pengguna_layanan=None, tanggal_pengujian=None):
     """
     Membuat dokumen Word Lampiran 7C dan menyimpannya ke output_path.
     (Wrapper tipis di atas build_lampiran_document untuk pemakaian CLI.)
     """
-    doc = build_lampiran_document(lampiran_data, profile=profile)
+    doc = build_lampiran_document(lampiran_data, profile=profile,
+                                  pengguna_layanan=pengguna_layanan,
+                                  tanggal_pengujian=tanggal_pengujian)
     doc.save(str(output_path))
     print(f"  [OK] Dokumen berhasil disimpan: {output_path}")
 
@@ -2248,7 +2319,8 @@ def build_uat_result_document(uat_data, title=None, product_key="FT_VA"):
 # API REUSABLE (dipakai aplikasi web)
 # ============================================================
 
-def convert_uat_to_lampiran(source, product=None):
+def convert_uat_to_lampiran(source, product=None, pengguna_layanan=None,
+                            tanggal_pengujian=None):
     """
     Konversi UAT Script (Excel) menjadi dokumen Lampiran 7C.
 
@@ -2260,6 +2332,9 @@ def convert_uat_to_lampiran(source, product=None):
         product: (opsional) kunci produk pada PRODUCT_PROFILES ("FT_VA" atau
             "QRIS") untuk MEMAKSA profil tertentu. Jika None/"AUTO", produk
             dideteksi otomatis dari isi file.
+        pengguna_layanan: "Nama Pengguna Layanan"; None = OTOMATIS dari nama PT
+            di judul UAT Script
+        tanggal_pengujian: "Tanggal Pengujian" (date/str); None = hari ini
 
     Returns:
         tuple: (doc, stats, warnings, product_key)
@@ -2310,11 +2385,23 @@ def convert_uat_to_lampiran(source, product=None):
             "N/A": na_n,
         }
 
-    doc = build_lampiran_document(lampiran_data, profile=profile)
+    if pengguna_layanan is None:
+        try:
+            pengguna_layanan = read_nama_pengguna(source)
+        except Exception:  # noqa: BLE001 - judul tak terbaca -> kosong
+            pengguna_layanan = ""
+    if tanggal_pengujian is None:
+        from datetime import date
+        tanggal_pengujian = date.today()
+
+    doc = build_lampiran_document(lampiran_data, profile=profile,
+                                  pengguna_layanan=pengguna_layanan,
+                                  tanggal_pengujian=tanggal_pengujian)
     return doc, stats, warnings, product_key, status_counts
 
 
-def convert_uat_to_lampiran_bytes(source, product=None):
+def convert_uat_to_lampiran_bytes(source, product=None, pengguna_layanan=None,
+                                  tanggal_pengujian=None):
     """
     Sama seperti convert_uat_to_lampiran(), tetapi mengembalikan dokumen dalam
     bentuk bytes (siap dikirim sebagai unduhan di aplikasi web).
@@ -2326,7 +2413,9 @@ def convert_uat_to_lampiran_bytes(source, product=None):
     """
     import io
 
-    doc, stats, warnings, product_key, status_counts = convert_uat_to_lampiran(source, product=product)
+    doc, stats, warnings, product_key, status_counts = convert_uat_to_lampiran(
+        source, product=product, pengguna_layanan=pengguna_layanan,
+        tanggal_pengujian=tanggal_pengujian)
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
@@ -2446,8 +2535,14 @@ def main():
     # Generate dokumen Word
     output_path = OUTPUT_DIR / OUTPUT_FILENAME
     print(f"  [3/3] Membuat dokumen Lampiran 7C: {output_path}")
+    from datetime import date
+    nama_pengguna = read_nama_pengguna(uat_script_path)
+    print(f"        Nama Pengguna Layanan : {nama_pengguna or '(tidak ditemukan di judul UAT)'}")
+    print(f"        Tanggal Pengujian     : {format_tanggal_7c(date.today())}")
     try:
-        create_lampiran_document(lampiran_data, output_path, profile=profile)
+        create_lampiran_document(lampiran_data, output_path, profile=profile,
+                                 pengguna_layanan=nama_pengguna,
+                                 tanggal_pengujian=date.today())
     except Exception as e:
         print(f"  [ERROR] Gagal membuat dokumen Word: {e}")
         sys.exit(1)

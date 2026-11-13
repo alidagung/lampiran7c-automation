@@ -17,6 +17,7 @@ Cara pakai:
 """
 
 import base64
+import html
 import io
 import json
 import zipfile
@@ -29,6 +30,7 @@ from main import (
     convert_uat_to_lampiran_bytes,
     convert_uat_to_result_bytes,
     detect_product,
+    format_tanggal_7c,
     read_uat_script,
     PRODUCT_PROFILES,
     OUTPUT_FILENAME,
@@ -566,25 +568,41 @@ with st.container(border=True):
             st.warning("Belum ada Sub API yang dicentang — tabel 5B & 6B akan menampilkan **semua** Sub API.")
             sub_api_tampil = None
 
+    if file_ok:
         st.markdown("**Data dokumen**")
-        m1, m2, m3 = st.columns([3, 2, 2])
+        if lampiran_5_6:
+            m1, m2, m3 = st.columns([3, 2, 2])
+        else:
+            m1, m3 = st.columns([3, 2])
+            m2 = None
         with m1:
-            pengguna = st.text_input("Pengguna Layanan (Lampiran 6B & 7B)", value=analisa["pengguna"],
-                                     key=f"pengguna_{sig}", help="Otomatis dari judul UAT Script; bisa diedit.")
-        with m2:
-            nomor_surat = st.text_input("Nomor surat (5A/5B)", value=analisa["nomor"],
-                                        key=f"nomor_{sig}", help="Otomatis dari Nomor Referensi UAT Script.")
+            pengguna = st.text_input(
+                "Pengguna Layanan (6B, 7B & 7C)" if lampiran_5_6 else "Nama Pengguna Layanan (7C)",
+                value=analisa["pengguna"], key=f"pengguna_{sig}",
+                help="Otomatis dari judul UAT Script; bisa diedit.")
+        if m2 is not None:
+            with m2:
+                nomor_surat = st.text_input("Nomor surat (5A/5B)", value=analisa["nomor"],
+                                            key=f"nomor_{sig}", help="Otomatis dari Nomor Referensi UAT Script.")
         with m3:
             tanggal_uji = st.date_input(
-                "Tanggal pengujian (5A, 6A, 7A)", key=KEY_TANGGAL, format="DD/MM/YYYY",
-                help="Satu tanggal untuk Lampiran 5A, 6A & 7A. Nama hari dihitung otomatis.",
+                "Tanggal pengujian (5A, 6A, 7A & 7C)" if lampiran_5_6 else "Tanggal Pengujian (7C)",
+                key=KEY_TANGGAL, format="DD/MM/YYYY",
+                help="Satu tanggal untuk semua lampiran. Nama hari dihitung otomatis.",
             )
-        st.markdown(
-            f'<div class="tgl-pratinjau">📅 Di 5A, 6A &amp; 7A tertulis: <i>"Pada hari '
-            f'{lampiran5.format_tanggal_pengujian(tanggal_uji)}, telah selesai dilakukan …"</i></div>',
-            unsafe_allow_html=True,
-        )
-        st.caption("👈 **User Devsite mitra** untuk Lampiran 6B diisi di panel kiri.")
+        pratinjau_7c = (f'📄 Di 7C tertulis: <i>Nama Pengguna Layanan : '
+                        f'{html.escape((pengguna or "").strip() or "-")} · Tanggal Pengujian : '
+                        f'{format_tanggal_7c(tanggal_uji)}</i>')
+        if lampiran_5_6:
+            st.markdown(
+                f'<div class="tgl-pratinjau">📅 Di 5A, 6A &amp; 7A tertulis: <i>"Pada hari '
+                f'{lampiran5.format_tanggal_pengujian(tanggal_uji)}, telah selesai dilakukan …"</i>'
+                f'<br>{pratinjau_7c}</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption("👈 **User Devsite mitra** untuk Lampiran 6B diisi di panel kiri.")
+        else:
+            st.markdown(f'<div class="tgl-pratinjau">{pratinjau_7c}</div>', unsafe_allow_html=True)
 
 
 # ============================================================
@@ -600,10 +618,14 @@ with st.container(border=True):
 
     if file_ok:
         siap = [("✅", "UAT Script terbaca")]
+        siap.append(("✅" if (pengguna or "").strip() else "⚠️",
+                     "Pengguna Layanan" + ("" if (pengguna or "").strip() else " belum ada")))
+        if not lampiran_5_6:
+            siap.append(("📅", f"Tanggal 7C: {format_tanggal_singkat(tanggal_uji)}"))
         if lampiran_5_6:
             siap.append(("✅" if nomor_surat.strip() else "⚠️",
                          "Nomor surat" + ("" if nomor_surat.strip() else " belum ada")))
-            siap.append(("📅", f"Tanggal 5A/6A/7A: {format_tanggal_singkat(tanggal_uji)}"))
+            siap.append(("📅", f"Tanggal 5A/6A/7A/7C: {format_tanggal_singkat(tanggal_uji)}"))
             siap.append(("✅" if user_devsite_mitra.strip() else "⚠️",
                          "User Devsite mitra" + ("" if user_devsite_mitra.strip()
                                                  else " belum diisi — isi di panel kiri")))
@@ -617,7 +639,9 @@ with st.container(border=True):
             with st.spinner("Membuat dokumen..."):
                 (lampiran_bytes, stats, warnings, product_key,
                  lampiran_name, status_counts) = convert_uat_to_lampiran_bytes(
-                    file_bytes, product=selected_product)
+                    file_bytes, product=selected_product,
+                    pengguna_layanan=(pengguna or "").strip() or analisa["pengguna"],
+                    tanggal_pengujian=tanggal_uji)
                 result_bytes, _pk, result_name = convert_uat_to_result_bytes(
                     file_bytes, product=selected_product)
                 lamp5 = lampiran5.convert_lampiran_5_bytes(
