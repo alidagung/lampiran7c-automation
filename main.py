@@ -679,6 +679,21 @@ def _parse_remarks_blocks(text):
     return blocks
 
 
+_LOG_MARKER_RE = re.compile(
+    r"https?://"                                              # URL endpoint
+    r"|^\s*(GET|POST|PUT|PATCH|DELETE)\s+\S"                  # request line HTTP
+    r"|^\s*(url|endpoint|header|headers|request|response)\b"  # label log
+    r"|^\s*[{\[]",                                            # body JSON
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _remark_berisi_log(remarks_text):
+    """True bila Remark berisi log request/response (URL, header, body JSON);
+    False bila hanya catatan/notifikasi teks biasa."""
+    return bool(_LOG_MARKER_RE.search(remarks_text or ""))
+
+
 def _format_headers(headers_raw):
     """
     Format blok Headers dari UAT Script ke format array Lampiran 7C.
@@ -762,17 +777,10 @@ def _format_headers(headers_raw):
     if not pairs:
         return ""
 
-    # Beautify: satu header per baris, indentasi 2 spasi, dipisah koma.
-    #   [
-    #     "Key=Value",
-    #     "Key=Value"
-    #   ]
-    out = ["["]
-    for i, p in enumerate(pairs):
-        comma = "," if i < len(pairs) - 1 else ""
-        out.append(f'  "{p}"{comma}')
-    out.append("]")
-    return "\n".join(out)
+    # SATU BARIS (permintaan user), dipisah koma tanpa enter:
+    #   ["Key=Value","Key=Value"]
+    # Value tetap apa adanya; hanya pembungkus kutip & koma yang ditambahkan.
+    return "[" + ",".join(f'"{p}"' for p in pairs) + "]"
 
 
 def _json_loads_toleran(raw):
@@ -1575,6 +1583,12 @@ def map_uat_to_lampiran(uat_data, collect_warnings=False, profile=None):
             elif not remarks_text or remarks_text.lower() == "none":
                 # Remarks kosong: Request dan Response kosong
                 notes = ""
+            elif (hasil_aktual.lower().strip() in ("siap dites", "butuh konfirmasi")
+                  and not _remark_berisi_log(remarks_text)):
+                # Siap dites / Butuh konfirmasi TANPA log: Remark hanya berupa
+                # catatan/notifikasi -> dilampirkan ke kolom Notes (apa adanya).
+                # Bila ADA log, diproses seperti biasa ke Request/Response.
+                notes = remarks_text.strip()
             elif request_mode == "qris":
                 # QRIS: parser khusus raw HTTP -> URL/Header/Body terdeteksi
                 # otomatis dan disusun seperti VA. Response dipisah & compress.

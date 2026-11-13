@@ -63,3 +63,34 @@ class TestInfo7C:
         src = _uat("Pipo")
         teks = _teks(m.convert_uat_to_lampiran_bytes(src.read_bytes())[0])
         assert f"Tanggal Pengujian     : {m.format_tanggal_7c(date.today())}" in teks
+
+
+class TestSiapDitesButuhKonfirmasi:
+    """Siap dites / Butuh konfirmasi: log -> Request/Response; catatan -> Notes."""
+
+    LOG = ('URL:\nhttps://x/api\n\nHeaders:\nA: b\n\nRequest Body:\n{"a": 1}\n\n'
+           'Response:\n{"ok": 1}')
+
+    def _map(self, hasil, remarks):
+        uat = {"Balance Services": [{
+            "nomor_kasus_tes": "1.1", "langkah_tes": "x", "hasil_aktual": hasil,
+            "hasil_diharapkan": "", "nama_modul": "Balance Inquiry", "remarks": remarks}]}
+        data = m.map_uat_to_lampiran(uat, profile=m.PRODUCT_PROFILES["FT_VA"])
+        return next(r for rows in data.values() for r in rows if r)
+
+    @pytest.mark.parametrize("hasil", ["Siap dites", "Butuh konfirmasi"])
+    def test_ada_log_dilampirkan_ke_request_response(self, hasil):
+        r = self._map(hasil, self.LOG)
+        assert "https://x/api" in r["request"] and '"ok"' in r["response"]
+        assert r["notes"] == "" and r["result"] == "N/A"
+
+    @pytest.mark.parametrize("hasil", ["Siap dites", "Butuh konfirmasi"])
+    def test_hanya_catatan_masuk_notes(self, hasil):
+        r = self._map(hasil, "Menunggu update fixing dari vendor.")
+        assert r["request"] == "" and r["response"] == ""
+        assert r["notes"] == "Menunggu update fixing dari vendor."
+        assert r["result"] == "N/A"
+
+    def test_remark_kosong_tetap_kosong(self):
+        r = self._map("Siap dites", "")
+        assert (r["request"], r["response"], r["notes"]) == ("", "", "")

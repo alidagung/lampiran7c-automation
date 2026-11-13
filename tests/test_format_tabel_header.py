@@ -26,10 +26,10 @@ REMARKS = (
 class TestFormatTabelHeader:
     def test_header_tabel_jadi_key_value_sesuai_contoh(self):
         req, _ = split_request_response(REMARKS)
-        assert ('[\n  "content-type=application/json",\n'
-                '  "X-PARTNER-ID=x8ir2mpkj477amer19biu4kn2l8cwlcw",\n'
-                '  "Authorization=Bearer test",\n'
-                '  "Cookie=Path=/"\n]') in req
+        assert ('["content-type=application/json",'
+                '"X-PARTNER-ID=x8ir2mpkj477amer19biu4kn2l8cwlcw",'
+                '"Authorization=Bearer test",'
+                '"Cookie=Path=/"]') in req
         assert "Name" not in req.split("Header Request:")[1].split("Request Body:")[0]
 
     def test_url_body_response_di_tempat_yang_benar(self):
